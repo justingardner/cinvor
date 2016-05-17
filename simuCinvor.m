@@ -26,6 +26,8 @@ switch scenario
         disp('Noise modulation only');
         kappa=4;
         noiseRatio=[0.09 0.12 0.14 0.18];
+        noiseRatio=[0.09 0.12 0.14 0.54];
+        noiseRatio=[0.4 0.09];
         plotRatio=noiseRatio;
         
         m=specifyModel(kappa,'baseModel');
@@ -41,6 +43,7 @@ switch scenario
     case 3
         disp('Tuning width modulation only');
         kappa=[4 3 2 1];
+        kappa=[1 5];
         noiseRatio=[0.09 0.09 0.09 0.09];
         plotRatio=kappa;
         
