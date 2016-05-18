@@ -66,7 +66,7 @@ m.noise = noise;
 m.rangeScaleFac=rangeScalFac;
 
 if e.plotModel
-  smartfig([e.figTitle,' Left is neural & Right is fMRI'],'reuse');clf
+  mlrSmartfig(e.figTitle,'reuse');clf
   % show some neuronal tuning curves
   subplot(3,2,1);hold on;
   angle=0:0.01:d2r(e.totalRangeDeg);

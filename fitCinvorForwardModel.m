@@ -28,7 +28,7 @@ centerIdx=find(channel.channelPref==channel.span/2);
 idealResp=channel.idealStimResponse(centerIdx,:);
 idealResp=[idealResp, idealResp(1)];
 
-mlrSmartfig([e.figTitle,' Left is neural & Right is fMRI'],'reuse'); 
+mlrSmartfig(e.figTitle,'reuse'); 
 subplot(3,2,2);
 plot(channelPrefs,channelTuning,'o-','linewidth',2); hold on
 plot(channelPrefs,idealResp,'g');
