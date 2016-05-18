@@ -17,7 +17,7 @@
 function m = setCinvorModel(e,varargin)
 
 % get arguments
-getArgs(varargin, {'kappa=4','amplitude=1','noise=0.4','nVoxels=100','neuronsPerVox=180','weighting=random','nTuning=180'});
+getArgs(varargin, {'kappa=4','amplitude=1','noise=0.1','nVoxels=100','neuronsPerVox=180','weighting=random','nTuning=180'});
 
 % range of orientations span 180
 rangeScalFac=360/e.totalRangeDeg;

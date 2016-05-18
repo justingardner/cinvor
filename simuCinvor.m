@@ -30,19 +30,20 @@ switch scenario
   scenarioName = 'Amplitude modulation only';
   testParameter = 'amplitude';
   testParameterValues = [1 0.8 0.2 0.1];
+  testParameterValues = [1 0.1];
   
  case 2
   scenarioName = 'Noise modulation only';
   testParameter = 'noise';
   testParameterValues=[0.09 0.12 0.14 0.18];
   testParameterValues=[0.09 0.12 0.14 0.54];
-  testParameterValues=[0.4 0.09];
+  testParameterValues=[0.4 0.1];
         
  case 3
   scenarioName = 'Tuning width modulation only';
   testParameter = 'kappa';
   testParameterValues = [4 3 2 1];
-  testParameterValues = [1 5];
+  testParameterValues = [1 4];
 end
 
 % display which scenario we are running
