@@ -24,6 +24,7 @@
 
 
 function channel = buildChannels(instances,stimVals,varargin)
+
 channel = [];
 % check arguments
 if any(nargin == [0])
@@ -74,8 +75,9 @@ end
 disp(['(buildChannels) Assume feature space spanned by stimuli/channel is ',num2str(channel.span)]);
 channel.spanValues=0:1:channel.span-1;
 [channel.spanResponse channel.channelPref]=getChannelResponse(channel.spanValues,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
+
 if ~isequal(channel.channelPref, stimVals)
-  warning('Channels being built have different preferences than the stimulus. The current implementation is likely incorrect under such a setting');
+  warning('Channels being built have different preferences than the stimulus. The current implementation is likely incorrect under such a setting. Add the flag "interpChanResp=1" when testing with testChannels to interpolate channel responses');
 end
 channel.idealStimVals=stimVals;
 [channel.idealStimResponse temp]=getChannelResponse(stimVals,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
@@ -132,6 +134,7 @@ end
 %%   sinFilter   %%
 %%%%%%%%%%%%%%%%%%%
 function [filterOut filterOrientPref] = sinFilter(orientation,multiplier,numFilters,filterExponent)
+
 
 numOrientations=length(orientation);
 % get filter phases (evenly spaced)

@@ -1,6 +1,6 @@
 % testChannels.m
 %      usage: [avgTestResponse r2 classifyCorrTotal stimValVector predStimVal] = testChannels(instances,stimValues,channel, varargin)
-%         by: justin gardner and taosheng liu
+%         by: justin gardner and taosheng liu, steeve laquitaine
 %       date: 07/25/14
 %    purpose: Test channel response using the forward model proposed by Brouwer & Heeger (2009).
 %             Input1: instances can be those returned from getInstances (see getInstances), should be
@@ -10,6 +10,11 @@
 %             Input3: channel is a struct returned by buildChannels
 %             If a list of ROIs is passed in as first argument, will test channels
 %             in each ROI (note the recursive call at the beginning). 
+%             varargin : 'interpChanResp=1': this interpolates channel
+%             responses to a the entire space of 360 channel orientation
+%             preferences separated by 1 deg step (1:1:360). Use this flag 
+%             when the displayed orientations do not match the channel 
+%             orientation preferences.          
 %             Outputs are:
 %             avgTestResponse: the average channel response to the test instances
 %             r2: the r2 value for predicting voxel responses, different methods are used
@@ -27,7 +32,8 @@ if any(nargin == [0])
 end
 
 % parse input arguments
-getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0'});
+getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0','interpChanResp=0'});
+
 
 if isfield(instances{1},instanceFieldName) && isfield(instances{1},'name')
   for iROI = 1:length(instances)
@@ -52,7 +58,18 @@ for istim=1:length(instances)
 end
 
 testChannelResponse=instanceMatrix*pinv(channel.channelWeights); 
-avgTestResponse=getAverageChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.span/2);
+
+%re-center the channel responses relative to the match between the channel 
+%preference and the displayed orientation and average them
+if interpChanResp == 1
+    %interpolate channel responses. This is useful when displayed 
+    %orientations do not match channel preferences.     
+    avgTestResponse = getAverageInterpChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.span/2);
+else
+    %No interpolation. The displayed orientations must match the channel 
+    %preferences.
+    avgTestResponse = getAverageChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.span/2);
+end
 
 
 %Prediction/Identification: correlate channel response with the span response and
@@ -133,9 +150,10 @@ for i=1:nvox
 end
 return;
 
-function avgChannelResponse=getAverageChannelResponse(testChannelResponse,stimValVector,channelPref,channelCenter)
+function avgChannelResponse = getAverageChannelResponse(testChannelResponse,stimValVector,channelPref,channelCenter)
+
 if ~isequal(unique(stimValVector), channelPref)
-  error('TSL:the current shift and average scheme is probably incorrect when channel preferences are different from the stimulus values');
+  error('TSL:the current shift and average scheme is probably incorrect when channel preferences are different from the stimulus values. You need to interpolate channel responses : use the flag "interpChanResp=1".');
 end
 
 centerIdx=find(channelPref==channelCenter);
@@ -151,5 +169,62 @@ for i=1:length(channelPref)
 end
 avgChannelResponse=mean(allStimResp,1);
 
+
+function avgChannelResponse=getAverageInterpChannelResponse(testChannelResponse,stimValVector,channelPref,channelCenter)
+
+%warning that we are going to interpolate channel responses to 
+%360 oriented channels spanning the entire orientation space in steps of 1
+%deg. We want to visualize the average channel response not sorted by
+%displayed stimulus orientation but averaged over all displayed orientation. 
+%To do that we need to normalize channel responses relative to the displayed
+%orientation by re-aligning the channel responses such that the channel
+%which orientation preference matches the displayed orientation is centered
+%and the other channels are re-aligned relative to that channel based on
+%their channel orientation preference distance to the central channel.
+%That Re-alignment requires displayed orientations to match some of the channel
+%orientation preferences. We thus need to interpolate channel responses to
+%ensure that that happens. 
+if ~isequal(unique(stimValVector), channelPref)
+    disp(['Your ' num2str(length(channelPref)) ' channel responses have been interpolated to 360 channels with preferences spanning the entire space']);  
+end
+
+%1 deg step discretized space of 360 channel orientation preference 
+%for interpolation
+interp_pref_space = 1:1:360;
+
+%Interpolate the channel responses to approximate the responses of 360 
+%channels with orientation preferences separated by 1 deg (1:1:360 degs)
+for i = 1 : size(testChannelResponse,1)    
+    %circularily repeating channel preference mimics circularity
+    %and permits a circular interpolation
+    %deal with cases when first channel orientation preference is 0 or not
+    if channelPref(1) == 0
+        channelPref_wrp = [channelPref channelPref(2)*(length(channelPref) : 2*length(channelPref)-1)];
+    else        
+        channelPref_wrp = [channelPref channelPref(end)+channelPref(1:end)];  
+    end    
+    %circularily repeat test channel responses too
+    testChannelResponse_wrp(i,:) = repmat(testChannelResponse(i,:),1,2);        
+    %Interpolate
+    testChannelResponse_intp(i,:) = interp1(channelPref_wrp,testChannelResponse_wrp(i,:),interp_pref_space,'pchip');    
+end
+
+%The channel which orientation preference matches the displayed orientation 
+%at each trial is moved to a central position and the other channels are
+%position relative to that channel (a kind of response normalization 
+%by channel preference). Then channel response now position relative to the
+%displayed stimulus orientation are averaged over all trial instances.
+centerIdx=channelCenter;
+if isempty(centerIdx)
+  disp(['should have a channel centered on ', num2str(channelCenter)]);
+  keyboard;
+end
+allStimResp = [];
+for i = interp_pref_space
+  theseRespIdx = stimValVector==i;
+  theseStimResp = testChannelResponse_intp(theseRespIdx,:);
+  allStimResp = [allStimResp; circshift(theseStimResp,[0 centerIdx-i])];
+end
+avgChannelResponse = mean(allStimResp,1);
 
 
