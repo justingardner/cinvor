@@ -8,3 +8,7 @@ ranging from 1:1:360 degs.
 The code Interpolates channel responses on a space of 360 channel orientation preferences. This only works with orientation expressed on 360 deg space not on 180 deg space.
 
 The code displays the clusters of voxels responses by orientations for the training set, the test set , the reconstructed orientations plotted against the true orientations and the test set average channel response normalized to the displayed orientation.
+
+just run :
+
+>> run slsimCEintp
