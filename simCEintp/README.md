@@ -1,6 +1,8 @@
 
 #simCEintp
 
+author: steeve laquitaine
+
 Toolbox to simulate channel encoding reconstruction of 8 stimulus orientations from 50 response instances of 2 voxels. This tests the case when stimulus orientations do not match the 
 hypothetical channels orientation preferences. Channel responses are interpolated for 360 channels with orientation preferences 
 ranging from 1:1:360 degs.
