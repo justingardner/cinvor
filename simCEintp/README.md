@@ -11,4 +11,6 @@ The code displays the clusters of voxels responses by orientations for the train
 
 just run :
 
->> run slsimCEintp
+```matlab
+  >> run slsimCEintp.m
+```
