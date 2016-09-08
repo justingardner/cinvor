@@ -7,12 +7,6 @@
 %
 function retval = testCinvor(varargin)
 
-% check arguments
-if ~any(nargin == [0])
-  help testCinvor
-  return
-end
-
 % get arguments
 getArgs(varargin,{'dataDir=~/data/cinvor','analName=decon1gIns','contrastName=high','nFold=5','subjectList',{'s00520140704/', 's00720150319/', 's01720140718/', 's01920150212/', 's02120150325/', 's02920150330/'}});
 
@@ -60,12 +54,13 @@ for iSubject = 1:nSubjects
       [trainInstances testInstances] = getCrossValInstances(lvfInstances,crossVal,iFold);
       channel = buildChannels(trainInstances,e.stimVals);
       leftFoldOutputs(iFold) = testChannels(testInstances,e.stimVals,channel);
-      %leftOutputs(iSubject,iROI,iFold) = testChannels(testInstances,e.stimVals,channel);
+
       % comupte train/test of right visual field channels
       [trainInstances testInstances] = getCrossValInstances(rvfInstances,crossVal,iFold);
       channel = buildChannels(trainInstances,e.stimVals);
       rightFoldOutputs(iFold) = testChannels(testInstances,e.stimVals,channel);
-      %rightOutputs(iSubject,iROI,iFold) = testChannels(testInstances,e.stimVals,channel);
+      
+      % disp percent
       disppercent(calcPercentDone(iSubject,nSubjects,iROI,nROI,iFold,nFold));
     end
     
