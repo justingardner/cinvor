@@ -8,7 +8,7 @@
 function crossVal = getCrossValSets(instances,varargin)
 
 % check arguments
-if ~any(nargin == [1])
+if nargin == 0
   help getCrossvalSets
   return
 end

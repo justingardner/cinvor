@@ -55,12 +55,18 @@ end
 
 % preprocess instances
 [instances channel] = preprocessInstances(instances,'args',preprocessArgs);
+
+% initialize matrices
 instanceMatrix=[];
 stimValVector=[];
 
+% check that instance and stimVals match
 if size(instances, 2)~=length(stimVals)
-  error('Number of stimulus values much match the number of classes in instances');
+  disp(sprintf('(buildChannels) Number of stimulus values much match the number of classes in instances'));
+  keyboard
 end
+
+% turn into an instance matrix
 for istim=1:length(instances)
   stimValVector=[stimValVector, repmat(stimVals(istim),1,size(instances{istim},1))];
   instanceMatrix=[instanceMatrix; instances{istim}];
@@ -71,24 +77,29 @@ if max(stimVals)-min(stimVals) <=180
 else
   channel.span=360; multiplier=1;
 end
-disp(['(buildChannels) Assume feature space spanned by stimuli/channel is ',num2str(channel.span)]);
+oneTimeWarning('buildChannelsFeatureSpace',['(buildChannels) Assume feature space spanned by stimuli/channel is ',num2str(channel.span)]);
+
+% get channel responses
 channel.spanValues=0:1:channel.span-1;
 [channel.spanResponse channel.channelPref]=getChannelResponse(channel.spanValues,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
 if ~isequal(channel.channelPref, stimVals)
-  warning('Channels being built have different preferences than the stimulus. The current implementation is likely incorrect under such a setting');
+  warning('(buildChannels) Channels being built have different preferences than the stimulus. The current implementation is likely incorrect under such a setting');
 end
 channel.idealStimVals=stimVals;
 [channel.idealStimResponse temp]=getChannelResponse(stimVals,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
-
 [channel.channelResponse temp]=getChannelResponse(stimValVector,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
+
+% get channel weights
 channel.channelWeights=getChannelWeights(channel.channelResponse, instanceMatrix,'algorithm',algorithm);
 % channel.channelWeights=channel.channelWeights./repmat(sum(channel.channelWeights,1),size(channel.channelWeights,1),1); % this will normalize the weights, not sure if it's correct 
+
+% pack up into a structure to return
 channel.info.model=model;
 channel.info.numFilters=numFilters;
 channel.info.exponent=exponent;
 channel.info.algorithm=algorithm;
 
-
+% display
 if dispChannels
   smartfig('Channels','reuse'); clf;
   plot(channel.spanValues, channel.spanResponse,'linewidth',2);

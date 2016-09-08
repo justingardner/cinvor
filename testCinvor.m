@@ -5,7 +5,7 @@
 %       date: 09/07/16
 %    purpose: function to test build/test channels based on cinvor data
 %
-function retval = testCinvor()
+function retval = testCinvor(varargin)
 
 % check arguments
 if ~any(nargin == [0])
@@ -13,26 +13,20 @@ if ~any(nargin == [0])
   return
 end
 
-% data directories
-dataDir = '~/data/cinvor';
-subjectList={'s00520140704/', 's00720150319/', 's01720140718/', 's01920150212/', 's02120150325/', 's02920150330/'};
+% get arguments
+getArgs(varargin,{'dataDir=~/data/cinvor','analName=decon1gIns','contrastName=high','nFold=5','subjectList',{'s00520140704/', 's00720150319/', 's01720140718/', 's01920150212/', 's02120150325/', 's02920150330/'}});
 
 % number of subjects
 nSubjects = length(subjectList);
 
-% which analysis type to use
-analName = 'decon1gIns';
+% display what we are doing
+disppercent(-inf,sprintf('(testCinvor) Building and testing channels for %s contrast using analysis %s with %i fold cross-validation on %i subjects',contrastName,analName,nFold,nSubjects));
 
-% contrast to run (either high or low)
-contrast = 'high';
-
-% how many fold cross-validation to use
-nFold = 10;
-
+% iterate over subjects
 for iSubject = 1:nSubjects
   % load the data
   dataName = [subjectList{iSubject},'Anal/',analName];
-  disp(sprintf('(testCinvor) Loading data: %s',dataName));
+  disp(sprintf('(testCinvor) Loading data for subject %i/%i: %s',iSubject,nSubjects,dataName));
   load(dataName);
   
   % specify the experiment
@@ -42,7 +36,7 @@ for iSubject = 1:nSubjects
   nROI = length(s.lvf.roi);
 
   % decide on which contrast to do
-  if strcmp(lower(contrast),'high');
+  if strcmp(lower(contrastName),'high');
     stimNums = e.highContrastStimuli;
   else
     stimNums = e.lowContrastStimuli;
@@ -58,48 +52,78 @@ for iSubject = 1:nSubjects
     rvfInstances = {s.rvf.roi{iROI}.instance.instances{stimNums}};
     
     % get the crossVal sets
-    crossVal = getCrossValSets(lvfInstances);
+    crossVal = getCrossValSets(lvfInstances,'nFold',nFold);
       
     % now train and test over folds
-    for iFold = 1:5
+    for iFold = 1:nFold
       % comupte train/test of left visual field channels
       [trainInstances testInstances] = getCrossValInstances(lvfInstances,crossVal,iFold);
       channel = buildChannels(trainInstances,e.stimVals);
-      leftChannelResponse(iSubject,iROI,iFold,:) = testChannels(testInstances,e.stimVals,channel);
+      leftFoldOutputs(iFold) = testChannels(testInstances,e.stimVals,channel);
+      %leftOutputs(iSubject,iROI,iFold) = testChannels(testInstances,e.stimVals,channel);
       % comupte train/test of right visual field channels
       [trainInstances testInstances] = getCrossValInstances(rvfInstances,crossVal,iFold);
       channel = buildChannels(trainInstances,e.stimVals);
-      rightChannelResponse(iSubject,iROI,iFold,:) = testChannels(testInstances,e.stimVals,channel);
+      rightFoldOutputs(iFold) = testChannels(testInstances,e.stimVals,channel);
+      %rightOutputs(iSubject,iROI,iFold) = testChannels(testInstances,e.stimVals,channel);
+      disppercent(calcPercentDone(iSubject,nSubjects,iROI,nROI,iFold,nFold));
     end
+    
+    % average over folds and store in structure
+    leftOutputs(iSubject,iROI) = combineChannelOutputs(leftFoldOutputs,'combineAveraged');
+    rightOutputs(iSubject,iROI) = combineChannelOutputs(rightFoldOutputs,'combineAveraged');
   end
 end
+disppercent(inf);
 
-% display output
-mlrSmartfig('testCinvor','reuse');clf;
-xVals = circshift(e.stimVals(:),4);
-xVals(1:4) = xVals(1:4)-180;
-for iROI = 1:nROI
-  % select subplot
-  subplot(1,nROI,iROI);
-  % average across subjects and fold
-  thisLeftChannelResponse = leftChannelResponse(:,iROI,:,:);
-  thisLeftChannelResponseSTE = squeeze(std(squeeze(mean(thisLeftChannelResponse,3)))/sqrt(nSubjects));
-  thisLeftChannelResponse = squeeze(mean(mean(thisLeftChannelResponse,1),3));
-  thisRightChannelResponse = rightChannelResponse(:,iROI,:,:);
-  thisRightChannelResponseSTE = squeeze(std(squeeze(mean(thisRightChannelResponse,3)))/sqrt(nSubjects));
-  thisRightChannelResponse = squeeze(mean(mean(thisRightChannelResponse,1),3));
-  % display
-  myerrorbar(xVals,thisLeftChannelResponse,'yError',thisLeftChannelResponseSTE,'MarkerFaceColor','r','MarkerEdgeColor','w','MarkerSize',8);hold on
-  myerrorbar(xVals,thisRightChannelResponse,'yError',thisRightChannelResponseSTE,'MarkerFaceColor','k','MarkerEdgeColor','w','MarkerSize',8);hold on
-  % set title
-  title(sprintf('%s contrast: %s (%i fold cross-validation)',roiName{iROI},contrast,nFold));
-  % set legend
+
+% display figure
+mlrSmartfig(sprintf('testCinvor%s',contrastName),'reuse');clf;
+
+for iROI = 1:2:nROI
+  % get contras/ipsi for left
+  contraLeft = combineChannelOutputs(rightOutputs(:,iROI));
+  ipsiLeft = combineChannelOutputs(leftOutputs(:,iROI));
+
+  % get contras/ipsi for right
+  contraRight = combineChannelOutputs(leftOutputs(:,iROI+1));
+  ipsiRight = combineChannelOutputs(rightOutputs(:,iROI+1));
+
+  % get combined contra / ipsi
+  contraCombined = combineChannelOutputs([rightOutputs(:,iROI) leftOutputs(:,iROI+1)],channel);
+  ipsiCombined = combineChannelOutputs([rightOutputs(:,iROI+1) leftOutputs(:,iROI)],channel);
+
+  % plot left ROI
+  subplot(1,nROI+nROI/2,iROI);
+  dispChannelOutput(contraLeft,channel);
+  dispChannelOutput(ipsiLeft,channel,'MarkerFaceColor=r');
+
+  % set title and legends
+  title(sprintf('%s contrast: %s (%i fold cross-validation, nSubjects = %i)',roiName{iROI},contrastName,nFold,nSubjects));
+  mylegend({'Left visual field','Right visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
+  ylabel('Channel response (percentile of full response');
+
+  % plot right ROI
+  subplot(1,nROI+nROI/2,iROI+1);
+  dispChannelOutput(contraRight,channel,'MarkerFaceColor=r');
+  dispChannelOutput(ipsiRight,channel);
+
+  % set title and legends
+  title(sprintf('%s contrast: %s (%i fold cross-validation, nSubjects = %i)',roiName{iROI+1},contrastName,nFold,nSubjects));
   mylegend({'Left visual field','Right visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
   xlabel('Orientation difference from actual (degrees)');
-  ylabel('Channel response (a.u.)');
-end
-  
-  
 
+  % plot combined ROI
+  subplot(1,nROI+nROI/2,iROI+2);
+  dispChannelOutput(contraCombined,channel,'MarkerFaceColor=r');
+  dispChannelOutput(ipsiCombined,channel);
+
+  % set title and legends
+  title(sprintf('%s contrast: %s (%i fold cross-validation, nSubjects = %i)',roiName{iROI+1}(2:end),contrastName,nFold,nSubjects));
+  mylegend({'Contra visual field','Ipsi visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
+
+  makeEqualYaxis(1,nROI+nROI/2,iROI:iROI+2);
+end
 
 keyboard
+

@@ -45,13 +45,17 @@ end
 % preprocess instances, using the setting from the trained channel
 instances = preprocessInstances(instances, channel);
 
+% create instance matrix
 instanceMatrix=[]; stimValVector=[]; %stimClassVec=[];
 for istim=1:length(instances)
   stimValVector=[stimValVector, repmat(stimVals(istim),1,size(instances{istim},1))];
   instanceMatrix=[instanceMatrix; instances{istim}];
 end
 
+% get chanell responses
 testChannelResponse=instanceMatrix*pinv(channel.channelWeights); 
+
+% and average
 avgTestResponse=getAverageChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.span/2);
 
 
@@ -131,9 +135,26 @@ for i=1:nvox
   ss=sum((thisTestVox-mean(thisTestVox)).^2);
   r2.voxOneshot(i) =1-ssr/ss;   
 end
-return;
 
+% package up into one single return value 
+if nargout == 1
+  channelOutput.n = length(stimValVector);
+  channelOutput.stimVal = stimValVector;
+  channelOutput.channelResponse = testChannelResponse;
+  channelOutput.averageChannelResponse = avgTestResponse;
+  channelOutput.r2 = r2;
+  channelOutput.classifyCorrect = classifyCorrTotal;
+  channelOutput.predictedStimVal = predStimVal;
+  avgTestResponse = channelOutput;
+end
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    getAverageChannelResponse    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function avgChannelResponse=getAverageChannelResponse(testChannelResponse,stimValVector,channelPref,channelCenter)
+
+% check whether the stim values match the channel preferences
 if ~isequal(unique(stimValVector), channelPref)
   error('TSL:the current shift and average scheme is probably incorrect when channel preferences are different from the stimulus values');
 end
