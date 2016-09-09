@@ -14,8 +14,8 @@ if nargin == 0
 end
 
 % check for stimulus values matching channel preferences
-if ~isequal(unique(stimVals(:)), channel.channelPref(:))
-  disp(sprintf('(dispChannels) Could not shift channel response for averaging since stimulus values do not match channel preferences'));
+if ~isempty(setdiff(unique(stimVals(:)), channel.channelPref(:)))
+  disp(sprintf('(centerChannelOutput) Could not shift channel response for averaging since stimulus values do not match channel preferences'));
   keyboard
   return
 end

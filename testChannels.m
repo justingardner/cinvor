@@ -1,21 +1,40 @@
 % testChannels.m
-%      usage: [avgTestResponse r2 classifyCorrTotal stimValVector predStimVal] = testChannels(instances,stimValues,channel, varargin)
+%      usage: channelOutput = testChannels(instances,stimValues,channel,varargin)
 %         by: justin gardner and taosheng liu
 %       date: 07/25/14
 %    purpose: Test channel response using the forward model proposed by Brouwer & Heeger (2009).
-%             Input1: instances can be those returned from getInstances (see getInstances), should be
+%
+%             instances: instances can be those returned from getInstances (see getInstances), should be
 %             the test instance from an independent section of the data (i.e., not the ones
 %             used to build the channel).
-%             Input2: stimValues is a vector of stimulus value for each instance class
-%             Input3: channel is a struct returned by buildChannels
+%             stimValues: stimValues is a vector of stimulus value for each instance class
+%             channel: channel is a struct returned by buildChannels
+%
 %             If a list of ROIs is passed in as first argument, will test channels
 %             in each ROI (note the recursive call at the beginning). 
+%
 %             Outputs are:
-%             avgTestResponse: the average channel response to the test instances
-%             r2: the r2 value for predicting voxel responses, different methods are used
-%             classifyCorrTotal: the number of correct and total classifications using the channel response.
-%             stimValVector: the actual stimulus value for each test instance
-%             predStimVal: the predicted stimulus value for each test instance using the channel response
+%
+%             With single return argumnet, a struct channelOutput:
+%             
+%             channelOutput = testChannels(instances,stimVals,channel);
+% 
+%             channelOutput.channelResponse has the channel response for each test instance
+%             channelOutput.n = number of test responses
+%             channelOuptut.r2 = the r2 of the channel model fit
+%
+%             You can display the channelOutput using:
+%
+%             dispChannelOutput(channelOutput,channel);
+%
+%             and comine output for different runs of testChannels using combineChannelOutput.
+%
+%             With multiple return arguments (old style, returns the following fields):
+%               avgTestResponse: the average channel response to the test instances
+%               r2: the r2 value for predicting voxel responses, different methods are used
+%               classifyCorrTotal: the number of correct and total classifications using the channel response.
+%               stimValVector: the actual stimulus value for each test instance
+%               predStimVal: the predicted stimulus value for each test instance using the channel response
 
 function [avgTestResponse r2 classifyCorrTotal stimValVector predStimVal] = testChannels(instances,stimVals,channel,varargin)
 
@@ -27,7 +46,7 @@ if any(nargin == [0])
 end
 
 % parse input arguments
-getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0'});
+getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0','noiseModelGridSearchOnly=0'});
 
 if isfield(instances{1},instanceFieldName) && isfield(instances{1},'name')
   for iROI = 1:length(instances)
@@ -134,6 +153,11 @@ for i=1:nvox
   ssr=sum((thisTestVox-thisPredVox).^2);
   ss=sum((thisTestVox-mean(thisTestVox)).^2);
   r2.voxOneshot(i) =1-ssr/ss;   
+end
+
+% get likelihood function
+if isfield(channel,'noiseModel')
+  channelOutput.noiseModel = channelNoiseModelTest(instanceMatrix,stimValVector,channel);
 end
 
 % package up into one single return value 
