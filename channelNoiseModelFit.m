@@ -52,7 +52,7 @@ end
 % choose best initial params
 [~,bestIndex] = min(initLike);
 initParams = getNoiseModelInitParams(channel,rho(bestIndex),sigma(bestIndex),tau(bestIndex));
-disp(sprintf('(channelNoiseModelFit) Start params: rho=%0.2f sigma=%0.2f tau=%0.2f: %f',rho(bestIndex),sigma(bestIndex),tau(bestIndex),initLike(bestIndex)));
+disp(sprintf('(channelNoiseModelFit) Start params: rho=%0.2f sigma=%0.2f tau=%0.2f: %f (fit tolerence: %0.4f)',rho(bestIndex),sigma(bestIndex),tau(bestIndex),initLike(bestIndex),noiseModelFitTolerence));
 nIter = 0;
 
 % call fminsearch to find best parameters
