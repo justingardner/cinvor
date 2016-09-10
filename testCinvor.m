@@ -54,13 +54,13 @@ for iSubject = 1:nSubjects
     for iFold = 1:nFold
       % comupte train/test of left visual field channels
       [trainInstances testInstances] = getCrossValInstances(lvfInstances,crossVal,iFold);
-      leftFoldChannel(iFold) = buildChannels(trainInstances,e.stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=1');
+      leftFoldChannel(iFold) = buildChannels(trainInstances,e.stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=0');
       leftFoldOutputs(iFold) = testChannels(testInstances,e.stimVals,leftFoldChannel(iFold));
       
 
       % comupte train/test of right visual field channels
       [trainInstances testInstances] = getCrossValInstances(rvfInstances,crossVal,iFold);
-      rightFoldChannel(iFold) = buildChannels(trainInstances,e.stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=1');
+      rightFoldChannel(iFold) = buildChannels(trainInstances,e.stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=0');
       rightFoldOutputs(iFold) = testChannels(testInstances,e.stimVals,rightFoldChannel(iFold));
 
       % display
@@ -131,7 +131,7 @@ xlabel('Orientation difference from true (deg)');ylabel('Channel Response (perce
 if ~contraIpsi
   mylegend({'Right visual field','Left visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
 else
-  mylegend({'Contra visual field','Ipsi visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
+  mylegend({'Ipsi visual field','Contra visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
 end
 
 subplot(2,nCol,iCol+nCol);
@@ -142,7 +142,7 @@ xlabel('Orientation difference from true (deg)');ylabel('Likelihood (p)');
 if ~contraIpsi
   mylegend({'Right visual field','Left visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
 else
-  mylegend({'Contra visual field','Ipsi visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
+  mylegend({'Ipsi visual field','Contra visual field'},{{'ro' 'MarkerFaceColor=r' 'MarkerEdgeColor=w'},{'ko' 'MarkerFaceColor=k' 'MarkerEdgeColor=w'}});
 end
 
 drawnow
