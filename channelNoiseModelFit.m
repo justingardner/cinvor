@@ -14,7 +14,7 @@ if nargin < 2
 end
 
 % parse args
-getArgs(varargin,{'noiseModelGridSearchOnly=0'});
+getArgs(varargin,{'noiseModelGridSearchOnly=0','noiseModelFitTolerence=1','noiseModelGridSteps=10'});
 
 % get residual from channel model
 residualMatrix = instanceMatrix - channel.channelResponse*channel.channelWeights;
@@ -22,8 +22,7 @@ residualMatrix = instanceMatrix - channel.channelResponse*channel.channelWeights
 % set search options
 global nIter;
 global lastLogLike;lastLogLike = inf;
-searchOptions = optimset('Display','none','MaxIter',1000000,'MaxFunEvals',1000000,'TolFun',0.1,'TolX',0.1);
-searchOptions = optimset('Display','none','MaxIter',1000000,'MaxFunEvals',1000000,'TolFun',1,'TolX',1);
+searchOptions = optimset('Display','none','MaxIter',1000000,'MaxFunEvals',1000000,'TolFun',noiseModelFitTolerence,'TolX',noiseModelFitTolerence);
 
 % first grid search for best starting parameters
 
@@ -31,7 +30,7 @@ searchOptions = optimset('Display','none','MaxIter',1000000,'MaxFunEvals',100000
 rhoMin = 0;rhoMax = 0.4;
 sigmaMin = 0.2;sigmaMax = 0.6;
 tauMin = 0.6;tauMax = 1.4;
-numSteps = 10;
+numSteps = noiseModelGridSteps;
 
 % make the parameter arrays
 rho = rhoMin:(rhoMax-rhoMin)/(numSteps-1):rhoMax;

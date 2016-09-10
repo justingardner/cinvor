@@ -54,13 +54,13 @@ for iSubject = 1:nSubjects
     for iFold = 1:nFold
       % comupte train/test of left visual field channels
       [trainInstances testInstances] = getCrossValInstances(lvfInstances,crossVal,iFold);
-      leftFoldChannel(iFold) = buildChannels(trainInstances,e.stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=0');
+      leftFoldChannel(iFold) = buildChannels(trainInstances,e.stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=0','noiseModelFitTolerence',0.1,'noiseModelGridSteps=25');
       leftFoldOutputs(iFold) = testChannels(testInstances,e.stimVals,leftFoldChannel(iFold));
       
 
       % comupte train/test of right visual field channels
       [trainInstances testInstances] = getCrossValInstances(rvfInstances,crossVal,iFold);
-      rightFoldChannel(iFold) = buildChannels(trainInstances,e.stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=0');
+      rightFoldChannel(iFold) = buildChannels(trainInstances,e.stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=0','noiseModelFitTolerence',0.1,'noiseModelGridSteps=25');
       rightFoldOutputs(iFold) = testChannels(testInstances,e.stimVals,rightFoldChannel(iFold));
 
       % display

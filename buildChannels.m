@@ -33,7 +33,7 @@ end
 
 instanceFieldName=[]; channelFieldName=[]; model=[]; numFilters=[]; exponent=[]; algorithm=[]; dispChannels=[]; verbose=[];
 % parse input arguments
-[~,~,preprocessArgs] = getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','model=sinFilter','numFilters=8','exponent=7','algorithm=pinv','dispChannels=0','verbose=0','fitNoiseModel=0','noiseModelGridSearchOnly=0'});
+[~,~,preprocessArgs] = getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','model=sinFilter','numFilters=8','exponent=7','algorithm=pinv','dispChannels=0','verbose=0','fitNoiseModel=0','noiseModelGridSearchOnly=0','noiseModelFitTolerence=1','noiseModelGridSteps=10'});
 
 % see if we are passed in a cell array of rois. If so, then call buildClassifier
 % sequentially on each roi and put the output into the field specified by classField
@@ -104,7 +104,7 @@ channel.info.algorithm=algorithm;
 % fit van Bergen et al. NN 18:1728-30 noise model
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if fitNoiseModel
-  channel = channelNoiseModelFit(instanceMatrix,channel,'noiseModelGridSearchOnly',noiseModelGridSearchOnly);
+  channel = channelNoiseModelFit(instanceMatrix,channel,'noiseModelGridSearchOnly',noiseModelGridSearchOnly,'noiseModelFitTolerence',noiseModelFitTolerence,'noiseModelGridSteps',noiseModelGridSteps);
 end
 
 % display
