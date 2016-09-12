@@ -30,6 +30,11 @@ searchOptions = optimset('Display','none','MaxIter',1000000,'MaxFunEvals',100000
 rhoMin = 0;rhoMax = 0.4;
 sigmaMin = 0.2;sigmaMax = 0.6;
 tauMin = 0.6;tauMax = 1.4;
+
+rhoMin = 0;rhoMax = 0.95;
+sigmaMin = 0.1;sigmaMax = 6;
+tauMin = 0.1;tauMax = 6;
+
 numSteps = noiseModelGridSteps;
 
 % make the parameter arrays
@@ -41,15 +46,18 @@ nParamValues = length(rho(:));
 
 % do the grid search
 nIter = inf; % this will set no display of fit
-disp(sprintf('(channelNoiseModelFit) Grid searching over rho [%0.2f %0.2f] sigma [%0.2f %0.2f] tau [%0.2f %0.2f] with %i steps for best initial parameters',rhoMin,rhoMax,sigmaMin,sigmaMax,tauMin,tauMax,numSteps));
+disppercent(-inf,sprintf('(channelNoiseModelFit) Grid searching over rho [%0.2f %0.2f] sigma [%0.2f %0.2f] tau [%0.2f %0.2f] with %i steps for best initial parameters',rhoMin,rhoMax,sigmaMin,sigmaMax,tauMin,tauMax,numSteps));
 for iParamValue = 1:nParamValues
   % get the param values as an array
   params = getNoiseModelInitParams(channel,rho(iParamValue),sigma(iParamValue),tau(iParamValue));
   % compute model likelihood
   initLike(iParamValue) = noiseModelLogLikelihood(params,residualMatrix,channel);
+  disppercent(iParamValue/nParamValues);
 end
+disppercent(inf);
 
 % choose best initial params
+initLike(isinf(initLike)) = inf;
 [~,bestIndex] = min(initLike);
 initParams = getNoiseModelInitParams(channel,rho(bestIndex),sigma(bestIndex),tau(bestIndex));
 disp(sprintf('(channelNoiseModelFit) Start params: rho=%0.2f sigma=%0.2f tau=%0.2f: %f (fit tolerence: %0.4f)',rho(bestIndex),sigma(bestIndex),tau(bestIndex),initLike(bestIndex),noiseModelFitTolerence));

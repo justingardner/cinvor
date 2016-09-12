@@ -27,7 +27,7 @@ end
 crossVal.nFold = nFold;
 
 % display number of instances
-if unique(crossVal.nInstances)
+if length(unique(crossVal.nInstances)) == 1
   disp(sprintf('(getCrossValSets) Number of instances per class is: %i',unique(crossVal.nInstances)));
   balancedInstances = true;
   % only need to compute the train/test sets for one class and then will later

@@ -46,7 +46,7 @@ if any(nargin == [0])
 end
 
 % parse input arguments
-getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0','noiseModelGridSearchOnly=0'});
+getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0','doClassify=1'});
 
 if isfield(instances{1},instanceFieldName) && isfield(instances{1},'name')
   for iROI = 1:length(instances)
@@ -71,88 +71,18 @@ for istim=1:length(instances)
   instanceMatrix=[instanceMatrix; instances{istim}];
 end
 
-% get chanell responses
-testChannelResponse=instanceMatrix*pinv(channel.channelWeights); 
+% get channel responses
+testChannelResponse = instanceMatrix*pinv(channel.channelWeights); 
 
 % and average
-avgTestResponse=getAverageChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.span/2);
+avgTestResponse = getAverageChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.span/2);
 
-
-%Prediction/Identification: correlate channel response with the span response and
-%find the max correlation, which is the predicted value for the stimulus
-corrWithSpanResp=corr(testChannelResponse',channel.spanResponse');
-[maxCorr whichStim]=max(corrWithSpanResp,[],2);
-predStimVal=channel.spanValues(whichStim);
-%now do the same trick but correlate it with ideal reponse so we can classify the stimulus label
-corrWithIdealResp=corr(testChannelResponse',channel.idealStimResponse');
-[maxCorr whichStim]=max(corrWithIdealResp,[],2);
-classifiedStimval=channel.idealStimVals(whichStim);
-classifyCorrTotal=[sum(classifiedStimval==stimValVector) length(stimValVector)];
-
-%this part get predicted instance for each stim class 
-for i=1:length(stimVals)
-  idx=channel.idealStimVals==stimVals(i);
-  thisResp=channel.idealStimResponse(idx,:);
-%   predInstances(i,:)=thisResp*channel.channelWeights*max(avgTestResponse);
-  predInstances(i,:)=thisResp*channel.channelWeights;
-end
-nclass=size(predInstances,1);
-nvox=size(predInstances,2);
-%Now calculate a r2 value for the actual test data
-allTestInstance=[]; allPredInstance=[];
-for i=1:nclass
-  thisTestClass=instances{i}; 
-  thisPredClass=repmat(predInstances(i,:),size(thisTestClass,1),1);
-  allTestInstance=[allTestInstance; thisTestClass];
-  allPredInstance=[allPredInstance; thisPredClass];
-  thisClassSSR=0; thisClassSS=0;
-  for j=1:size(thisTestClass,1) %loop through trials
-    thisTestTrial=thisTestClass(j,:);
-    sumOfSquaresResidual = sum((thisTestTrial-thisPredClass(j,:)).^2);
-    sumOfSquares = sum((thisTestTrial-mean(thisTestTrial)).^2);
-    thisR2(j)=1-sumOfSquaresResidual/sumOfSquares;
-
-    thisClassSSR=thisClassSSR+sumOfSquaresResidual;
-    thisClassSS=thisClassSS+sumOfSquares;    
-  end
-  r2.clAvg(i)=mean(thisR2);
-  r2.clAcc(i)= 1-thisClassSSR/thisClassSS;
-  %doing everything in a single shot
-  thisTestClass=thisTestClass(:);
-  thisPredClass=thisPredClass(:);
-  ssr=sum((thisTestClass-thisPredClass).^2);
-  ss=sum((thisTestClass-mean(thisTestClass)).^2);
-  r2.clOneshot(i) =1-ssr/ss;
-end
-allTestInstance=allTestInstance(:);
-allPredInstance=allPredInstance(:);
-ssr=sum((allTestInstance-allPredInstance).^2);
-ss=sum((allTestInstance-mean(allTestInstance)).^2);
-r2.overall=1-ssr/ss;
-
-%do it for each voxel
-for i=1:nvox
-  temp=cellfun(@(x) x(:,i),instances,'UniformOutput',false);
-  thisTestVox=cell2mat(temp);
-  thisPredVox=repmat(predInstances(:,i)', size(thisTestVox,1),1);
-  thisVoxSSR=0; thisVoxSS=0;
-  for j=1:size(thisTestVox, 1)
-    thisTestTrial=thisTestVox(j,:);
-    sumOfSquaresResidual = sum((thisTestTrial-thisPredVox(j,:)).^2);
-    sumOfSquares = sum((thisTestTrial-mean(thisTestTrial)).^2);
-    thisR2Vox(j)=1-sumOfSquaresResidual/sumOfSquares;
-
-    thisVoxSSR=thisVoxSSR+sumOfSquaresResidual;
-    thisVoxSS=thisVoxSS+sumOfSquares;   
-  end
-  r2.voxAvg(i)=mean(thisR2Vox);
-  r2.voxAcc(i)= 1-thisVoxSSR/thisVoxSS;
-  %doing everything in a single shot
-  thisTestVox=thisTestVox(:);
-  thisPredVox=thisPredVox(:);
-  ssr=sum((thisTestVox-thisPredVox).^2);
-  ss=sum((thisTestVox-mean(thisTestVox)).^2);
-  r2.voxOneshot(i) =1-ssr/ss;   
+% package up
+if nargout == 1
+  channelOutput.n = length(stimValVector);
+  channelOutput.stimVal = stimValVector;
+  channelOutput.channelResponse = testChannelResponse;
+  channelOutput.averageChannelResponse = avgTestResponse;
 end
 
 % get likelihood function
@@ -160,18 +90,97 @@ if isfield(channel,'noiseModel')
   channelOutput.noiseModel = channelNoiseModelTest(instanceMatrix,stimValVector,channel);
 end
 
-% package up into one single return value 
-if nargout == 1
-  channelOutput.n = length(stimValVector);
-  channelOutput.stimVal = stimValVector;
-  channelOutput.channelResponse = testChannelResponse;
-  channelOutput.averageChannelResponse = avgTestResponse;
-  channelOutput.r2 = r2;
-  channelOutput.classifyCorrect = classifyCorrTotal;
-  channelOutput.predictedStimVal = predStimVal;
-  avgTestResponse = channelOutput;
+
+if doClassify 
+  %Prediction/Identification: correlate channel response with the span response and
+  %find the max correlation, which is the predicted value for the stimulus
+  corrWithSpanResp=corr(testChannelResponse',channel.spanResponse');
+  [maxCorr whichStim]=max(corrWithSpanResp,[],2);
+  predStimVal=channel.spanValues(whichStim);
+  %now do the same trick but correlate it with ideal reponse so we can classify the stimulus label
+  corrWithIdealResp=corr(testChannelResponse',channel.idealStimResponse');
+  [maxCorr whichStim]=max(corrWithIdealResp,[],2);
+  classifiedStimval=channel.idealStimVals(whichStim);
+  classifyCorrTotal=[sum(classifiedStimval(:)==stimValVector(:)) length(stimValVector)];
+
+  %this part get predicted instance for each stim class 
+  for i=1:length(stimVals)
+    idx=channel.idealStimVals==stimVals(i);
+    thisResp=channel.idealStimResponse(idx,:);
+%   predInstances(i,:)=thisResp*channel.channelWeights*max(avgTestResponse);
+    predInstances(i,:)=thisResp*channel.channelWeights;
+  end
+  nclass=size(predInstances,1);
+  nvox=size(predInstances,2);
+
+  %Now calculate a r2 value for the actual test data
+  allTestInstance=[]; allPredInstance=[];
+  for i=1:nclass
+    thisTestClass=instances{i}; 
+    thisPredClass=repmat(predInstances(i,:),size(thisTestClass,1),1);
+    allTestInstance=[allTestInstance; thisTestClass];
+    allPredInstance=[allPredInstance; thisPredClass];
+    thisClassSSR=0; thisClassSS=0;
+    for j=1:size(thisTestClass,1) %loop through trials
+      thisTestTrial=thisTestClass(j,:);
+      sumOfSquaresResidual = sum((thisTestTrial-thisPredClass(j,:)).^2);
+      sumOfSquares = sum((thisTestTrial-mean(thisTestTrial)).^2);
+      thisR2(j)=1-sumOfSquaresResidual/sumOfSquares;
+
+      thisClassSSR=thisClassSSR+sumOfSquaresResidual;
+      thisClassSS=thisClassSS+sumOfSquares;    
+    end
+    r2.clAvg(i)=mean(thisR2);
+    r2.clAcc(i)= 1-thisClassSSR/thisClassSS;
+    %doing everything in a single shot
+    thisTestClass=thisTestClass(:);
+    thisPredClass=thisPredClass(:);
+    ssr=sum((thisTestClass-thisPredClass).^2);
+    ss=sum((thisTestClass-mean(thisTestClass)).^2);
+    r2.clOneshot(i) =1-ssr/ss;
+  end
+  allTestInstance=allTestInstance(:);
+  allPredInstance=allPredInstance(:);
+  ssr=sum((allTestInstance-allPredInstance).^2);
+  ss=sum((allTestInstance-mean(allTestInstance)).^2);
+  r2.overall=1-ssr/ss;
+
+  %do it for each voxel
+  for i=1:nvox
+    temp=cellfun(@(x) x(:,i),instances,'UniformOutput',false);
+    thisTestVox=cell2mat(temp);
+    thisPredVox=repmat(predInstances(:,i)', size(thisTestVox,1),1);
+    thisVoxSSR=0; thisVoxSS=0;
+    for j=1:size(thisTestVox, 1)
+      thisTestTrial=thisTestVox(j,:);
+      sumOfSquaresResidual = sum((thisTestTrial-thisPredVox(j,:)).^2);
+      sumOfSquares = sum((thisTestTrial-mean(thisTestTrial)).^2);
+      thisR2Vox(j)=1-sumOfSquaresResidual/sumOfSquares;
+      
+      thisVoxSSR=thisVoxSSR+sumOfSquaresResidual;
+      thisVoxSS=thisVoxSS+sumOfSquares;   
+    end
+    r2.voxAvg(i)=mean(thisR2Vox);
+    r2.voxAcc(i)= 1-thisVoxSSR/thisVoxSS;
+    %doing everything in a single shot
+    thisTestVox=thisTestVox(:);
+    thisPredVox=thisPredVox(:);
+    ssr=sum((thisTestVox-thisPredVox).^2);
+    ss=sum((thisTestVox-mean(thisTestVox)).^2);
+    r2.voxOneshot(i) =1-ssr/ss;   
+  end
+  % package up into one single return value 
+  if nargout == 1
+    channelOutput.r2 = r2;
+    channelOutput.classifyCorrect = classifyCorrTotal;
+    channelOutput.predictedStimVal = predStimVal;
+  end
 end
 
+% just to return the right argument
+if nargout == 1
+  avgTestResponse = channelOutput;
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %    getAverageChannelResponse    %
@@ -180,7 +189,9 @@ function avgChannelResponse=getAverageChannelResponse(testChannelResponse,stimVa
 
 % check whether the stim values match the channel preferences
 if ~isequal(unique(stimValVector), channelPref)
-  error('TSL:the current shift and average scheme is probably incorrect when channel preferences are different from the stimulus values');
+  disp(sprintf('(testChannels) The current shift and average scheme is probably incorrect when channel preferences are different from the stimulus values - skipping.'));
+  avgChannelResponse = [];
+  return
 end
 
 centerIdx=find(channelPref==channelCenter);

@@ -16,6 +16,8 @@ nSubjects = length(subjectList);
 % display what we are doing
 disppercent(-inf,sprintf('(testCinvor) Building and testing channels for %s contrast using analysis %s with %i fold cross-validation on %i subjects',contrastName,analName,nFold,nSubjects));
 
+%load(fullfile(dataDir,'testCinvorFullFit'));
+
 % iterate over subjects
 for iSubject = 1:nSubjects
   % load the data

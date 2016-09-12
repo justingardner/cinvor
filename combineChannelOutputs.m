@@ -69,12 +69,16 @@ for iOutput = 1:nOutputs
   % channel responses
   combinedOutput.channelResponse = [combinedOutput.channelResponse ; channelOutputs(iOutput).channelResponse];
   % get the r2 value
-  combinedOutput.r2.overall(iOutput) = channelOutputs(iOutput).r2.overall;
+  if isfield(channelOutputs(iOutput),'r2')
+    combinedOutput.r2.overall(iOutput) = channelOutputs(iOutput).r2.overall;
+  end
 end
 
 % average the r2 value
-combinedOutput.r2.steOverall = std(combinedOutput.r2.overall)/sqrt(nOutputs);
-combinedOutput.r2.overall = mean(combinedOutput.r2.overall);
+if isfield(combinedOutput,'r2')
+  combinedOutput.r2.steOverall = std(combinedOutput.r2.overall)/sqrt(nOutputs);
+  combinedOutput.r2.overall = mean(combinedOutput.r2.overall);
+end
 
 % combine noiseModelOutputs
 if isfield(channelOutputs,'noiseModel')

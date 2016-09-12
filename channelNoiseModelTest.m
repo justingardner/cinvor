@@ -16,6 +16,7 @@ end
 
 nInstances = size(instanceMatrix,1);
 % over instances
+disppercent(-inf,'(channelNoiseModelTest) Computing likelihod');
 for iInstance = 1:nInstances
   % now for all parameter values (like orientation)
   for iStim = 1:length(channel.spanValues)
@@ -25,7 +26,9 @@ for iInstance = 1:nInstances
   end
   % normalize to probability
   noiseModelOutput.likelihood(iInstance,:) = noiseModelOutput.likelihood(iInstance,:)/sum(noiseModelOutput.likelihood(iInstance,:));
+  disppercent(iInstance/nInstances);
 end
+disppercent(inf);
 
 % now recenter and average
 centerIndex = round(length(channel.spanValues)/2);
