@@ -31,7 +31,7 @@ mlrSmartfig('testLikeV1fold','reuse');clf;
 for iFold = 1:nFold
   % comupte train/test of left visual field channels
   [trainInstances testInstances] = getCrossValInstances(instances,crossVal,iFold);
-  channelFold(iFold) = buildChannels(trainInstances,stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=0','noiseModelFitTolerence',0.1,'noiseModelGridSteps=25');
+  channelFold(iFold) = buildChannels(trainInstances,stimVals,'fitNoiseModel=1','noiseModelGridSearchOnly=1','noiseModelFitTolerence',0.1,'noiseModelGridSteps=2');
   outputFold(iFold) = testChannels(testInstances,stimVals,channelFold(iFold),'doClassify=0');
 
   % display fold

@@ -31,9 +31,13 @@ rhoMin = 0;rhoMax = 0.4;
 sigmaMin = 0.2;sigmaMax = 0.6;
 tauMin = 0.6;tauMax = 1.4;
 
-rhoMin = 0;rhoMax = 0.95;
-sigmaMin = 0.1;sigmaMax = 6;
-tauMin = 0.1;tauMax = 6;
+%rhoMin = 0;rhoMax = 0.95;
+%sigmaMin = 2;sigmaMax = 6;
+%tauMin = 2;tauMax = 6;
+
+%rhoMin = 0.79;rhoMax = 0.81;
+%sigmaMin = 4.3;sigmaMax = 4.5;
+%tauMin = 0.69;tauMax = 0.71;
 
 numSteps = noiseModelGridSteps;
 
