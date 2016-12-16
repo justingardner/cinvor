@@ -13,11 +13,12 @@
 % weighting: distribution of neuronal tuning within a voxel, default to random weighting
 % ntuning: number of tuning functions, evenly spaced to cover the 0-360 range
 % kappa: concentraion parameter of individual neurons's tuning width, using von Mises function
-%
+% myWeights: fixed selection of weights (must use weighting=fixed)
+% alpha: proportion of voxels containing information
 function m = setCinvorModel(e,varargin)
 
-% get arguments
-getArgs(varargin, {'kappa=4','amplitude=1','noise=0.1','nVoxels=100','neuronsPerVox=180','weighting=random','nTuning=180'});
+% get arguments %%%%%%kappa=2.5, noise = 8
+getArgs(varargin, {'kappa=4','amplitude=1','noise=10','nVoxels=78','neuronsPerVox=180','weighting=random','nTuning=180','myWeights=0','uniformFactor=0','tao=.1','exponent=2','alphaParam=1'});
 
 % range of orientations span 180
 rangeScalFac=360/e.totalRangeDeg;
@@ -44,15 +45,38 @@ end
 
 %generate weights for each voxel, returns a nVoxels by neuronsPerVox matrix
 if strcmp(weighting,'random')
+  %%
+  %covarianceMat = zeros(neuronsPerVox);
+  %for i = 1:neuronsPerVox
+  %  for j = 1:neuronsPerVox
+  %    dist = min(abs(i-j),abs(abs(i-j)-neuronsPerVox));
+  %    covarianceMat(i,j) = exp(-((dist/tao).^exponent));
+  %  end
+  %end
+  %[V,D]=eig(covarianceMat);D(D<0)=0;covarianceMat=V*D*V'; %approximate as positive semidefinite
+  %mu = zeros(1,neuronsPerVox);
+  %ws = mvnrnd(mu,covarianceMat,nVoxels);
+  %%
+
   for i=1:nVoxels
-    thisW=rand(1,neuronsPerVox); %for each voxel, generate random weights for each tuning function
-    thisW=thisW/sum(thisW); %normalize these weights, so that they sum to 1
-    ws(i,:)=thisW;
+    if(rand() < alphaParam)
+      thisW=uniformFactor*ones(1,neuronsPerVox)+rand(1,neuronsPerVox); %for each voxel, generate random weights for each tuning function
+      %thisW=thisW/sum(thisW); %normalize these weights, so that they sum to 1
+      ws(i,:)=thisW;
+    else
+      ws(i,:) = zeros(1,neuronsPerVox);
+    end
   end
+elseif strcmp(weighting,'fixed')
+  ws = myWeights;
 else
   disp('(setCinvorModel) Other weighting scheme is not implemented yet');
 end
 
+for i = 1:nTuning
+  angle=d2r(1:e.totalRangeDeg);
+  neuralResponse(i,1:length(angle)) = circ_vmpdf(angle*rangeScalFac,d2r(prefStim(i))*rangeScalFac, kappa);
+end
 %put these parameters in the m structure
 m.ws=ws;
 m.weighting=weighting;
@@ -64,8 +88,15 @@ m.kappa=kappa;
 m.amplitude = amplitude;
 m.noise = noise;
 m.rangeScaleFac=rangeScalFac;
+m.neuralResponse = neuralResponse;
+m.uniformFactor = uniformFactor;
+%m.covarianceMat = covarianceMat;
+m.tao = tao;
+m.exponent = exponent;
+m.alphaParam = alphaParam;
 
 if e.plotModel
+  clf
   mlrSmartfig(e.figTitle,'reuse');clf
   % show some neuronal tuning curves
   subplot(3,2,1);hold on;
@@ -81,9 +112,10 @@ if e.plotModel
   
   % show some voxel tuning curves
   subplot(3,2,3); hold on
-  plotVox=10; %select 10 voxels to plot
+  %plotVox=10; %select 10 voxels to plot
+  plotVox=nVoxels; %select 10 voxels to plot
   voxIdx=1:nVoxels/plotVox:nVoxels;
-  plotAngles=0:2:e.totalRangeDeg; %stimulus values used to generate voxel tuning curve
+  plotAngles=1:1:e.totalRangeDeg; %stimulus values used to generate voxel tuning curve
   for istim=1:length(plotAngles)
     thisStimVal=d2r(plotAngles(istim));
     resp=[];
@@ -95,6 +127,7 @@ if e.plotModel
     wresp=resp.*ws(voxIdx,:); %weight the neuronal response with pre-generated weights
     voxResp(:,istim)=sum(wresp,2); %sum across all neurons within a voxel
   end
+  m.voxResp = voxResp %**
   for v=1:plotVox
     plot(plotAngles, voxResp(v,:), getcolor(v));
   end

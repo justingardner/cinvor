@@ -9,7 +9,7 @@
 function e=specifyCinvorExperiment(varargin)
 
 % parse arguments
-getArgs(varargin, {'stimLevel=8','trialPerStim=24','plotModel=1','figTitle','Default cinvor model'});
+getArgs(varargin, {'stimLevel=8','trialPerStim=24','plotModel=0','figTitle','Default cinvor model'});
 
 % full range of degrees
 e.totalRangeDeg = 180;

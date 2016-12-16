@@ -17,7 +17,7 @@
 %             stimValVector: the actual stimulus value for each test instance
 %             predStimVal: the predicted stimulus value for each test instance using the channel response
 
-function [avgTestResponse r2 classifyCorrTotal stimValVector predStimVal] = testChannels(instances,stimVals,channel,varargin)
+function [avgTestResponse r2 classifyCorrTotal stimValVector predStimVal posterior] = testChannels(instances,stimVals,channel,varargin)
 
 % classifier = [];
 % check arguments
@@ -27,7 +27,7 @@ if any(nargin == [0])
 end
 
 % parse input arguments
-getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0'});
+getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0','fitNoise=1'});
 
 if isfield(instances{1},instanceFieldName) && isfield(instances{1},'name')
   for iROI = 1:length(instances)
@@ -50,7 +50,13 @@ for istim=1:length(instances)
   stimValVector=[stimValVector, repmat(stimVals(istim),1,size(instances{istim},1))];
   instanceMatrix=[instanceMatrix; instances{istim}];
 end
-
+if(fitNoise)
+  [posterior.val posterior.mean posterior.std] = getPosterior(channel,instanceMatrix)
+else
+  posterior.val = 0;
+  posterior.mean = 0;
+  posterior.std = 0;
+end
 testChannelResponse=instanceMatrix*pinv(channel.channelWeights); 
 avgTestResponse=getAverageChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.span/2);
 
@@ -150,6 +156,28 @@ for i=1:length(channelPref)
   allStimResp=[allStimResp; circshift(theseStimResp,[0 centerIdx-i])];
 end
 avgChannelResponse=mean(allStimResp,1);
+
+function [posterior posterior_mean posterior_std] = getPosterior(channel,instanceMatrix)
+omegaInv = inv(channel.omega);
+N_trials = size(instanceMatrix,1);
+posterior = zeros(N_trials,channel.span);
+posterior_mean = zeros(N_trials,1);
+posterior_std = zeros(N_trials,1);
+if(channel.span == 180)
+  multiplier = 2;
+else
+  multiplier = 1;
+end
+angles = deg2rad(1:multiplier:360);
+for i = 1:N_trials
+  for j = 1:channel.span
+    thisError = instanceMatrix(i,:)' - channel.channelWeights'*channel.spanResponse(j,:)';
+    posterior(i,j) = exp(-0.5*thisError'*omegaInv*thisError);
+  end
+  posterior(i,:) = posterior(i,:)/sum(posterior(i,:)); %normalization
+  posterior_mean(i) = circ_mean(angles',posterior(i,:)')/(2*pi)*(360/multiplier);
+  posterior_std(i) = circ_std(angles',posterior(i,:)')/(2*pi)*(360/multiplier);
+end
 
 
 

@@ -32,11 +32,12 @@ for i=1:e.stimLevel
   wresp=resp.*m.ws; %weight each neurons' response in each voxel
   voxResp=sum(wresp,2); %sum all neurons within a voxel
   voxResp=voxResp'; % reorient to fit the instances structure
-  noiseSD=mean(voxResp)*m.noise;
-  instances{i}=repmat(voxResp, e.trialPerStim, 1)+randn(e.trialPerStim, m.nVoxels)*noiseSD; %repeat over trials and add noise
+  %noiseSD=mean(voxResp)*m.noise;
+  noiseSD=m.noise; %additive, not multiplicative noise model
+  instances{i}=repmat(voxResp*m.amplitude, e.trialPerStim, 1)+randn(e.trialPerStim, m.nVoxels)*noiseSD; %repeat over trials and add noise
 end
 
 % scale by amplitude
-instances = cellfun(@(x) mtimes(x,m.amplitude),instances,'UniformOutput',false);
+%instances = cellfun(@(x) mtimes(x,m.amplitude),instances,'UniformOutput',false);
 
 
