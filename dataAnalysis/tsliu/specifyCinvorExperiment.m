@@ -33,7 +33,3 @@ e.allStimVal=allStimVal;
 e.plotModel = plotModel;
 
 e.figTitle = figTitle;
-
-% specify which are the low and high contrast stimuli
-e.lowContrastStimuli = 1:8;
-e.highContrastStimuli = 9:16;

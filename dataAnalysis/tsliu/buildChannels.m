@@ -33,7 +33,7 @@ end
 
 instanceFieldName=[]; channelFieldName=[]; model=[]; numFilters=[]; exponent=[]; algorithm=[]; dispChannels=[]; verbose=[];
 % parse input arguments
-[~,~,preprocessArgs] = getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','model=sinFilter','numFilters=8','exponent=7','algorithm=pinv','dispChannels=0','verbose=0','fitNoiseModel=0','noiseModelGridSearchOnly=0','noiseModelFitTolerence=1','noiseModelGridSteps=10','fitNoise=0'});
+[~,~,preprocessArgs] = getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','model=sinFilter','numFilters=8','exponent=7','algorithm=pinv','dispChannels=0','verbose=0','fitNoise=1'});
 
 % see if we are passed in a cell array of rois. If so, then call buildClassifier
 % sequentially on each roi and put the output into the field specified by classField
@@ -55,18 +55,12 @@ end
 
 % preprocess instances
 [instances channel] = preprocessInstances(instances,'args',preprocessArgs);
-
-% initialize matrices
 instanceMatrix=[];
 stimValVector=[];
 
-% check that instance and stimVals match
 if size(instances, 2)~=length(stimVals)
-  disp(sprintf('(buildChannels) Number of stimulus values much match the number of classes in instances'));
-  keyboard
+  error('Number of stimulus values much match the number of classes in instances');
 end
-
-% turn into an instance matrix
 for istim=1:length(instances)
   stimValVector=[stimValVector, repmat(stimVals(istim),1,size(instances{istim},1))];
   instanceMatrix=[instanceMatrix; instances{istim}];
@@ -77,19 +71,16 @@ if max(stimVals)-min(stimVals) <=180
 else
   channel.span=360; multiplier=1;
 end
-oneTimeWarning('buildChannelsFeatureSpace',['(buildChannels) Assume feature space spanned by stimuli/channel is ',num2str(channel.span)]);
-
-% get channel responses
+disp(['(buildChannels) Assume feature space spanned by stimuli/channel is ',num2str(channel.span)]);
 channel.spanValues=0:1:channel.span-1;
 [channel.spanResponse channel.channelPref]=getChannelResponse(channel.spanValues,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
 if ~isequal(channel.channelPref, stimVals)
-  warning('(buildChannels) Channels being built have different preferences than the stimulus. The current implementation is likely incorrect under such a setting');
+  warning('Channels being built have different preferences than the stimulus. The current implementation is likely incorrect under such a setting');
 end
 channel.idealStimVals=stimVals;
 [channel.idealStimResponse temp]=getChannelResponse(stimVals,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
-[channel.channelResponse temp]=getChannelResponse(stimValVector,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
 
-% get channel weights
+[channel.channelResponse temp]=getChannelResponse(stimValVector,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
 channel.channelWeights=getChannelWeights(channel.channelResponse, instanceMatrix,'algorithm',algorithm);
 if(fitNoise)
   [channel.rho channel.sigma channel.tao channel.omega]=getNoiseParam(channel.channelResponse, instanceMatrix,channel.channelWeights);
@@ -97,22 +88,12 @@ if(fitNoise)
 end
 
 % channel.channelWeights=channel.channelWeights./repmat(sum(channel.channelWeights,1),size(channel.channelWeights,1),1); % this will normalize the weights, not sure if it's correct 
-
-% pack up into a structure to return
 channel.info.model=model;
-channel.info.numVoxels = size(instanceMatrix,2);
 channel.info.numFilters=numFilters;
 channel.info.exponent=exponent;
 channel.info.algorithm=algorithm;
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% fit van Bergen et al. NN 18:1728-30 noise model
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-if fitNoiseModel
-  channel = channelNoiseModelFit(instanceMatrix,channel,'noiseModelGridSearchOnly',noiseModelGridSearchOnly,'noiseModelFitTolerence',noiseModelFitTolerence,'noiseModelGridSteps',noiseModelGridSteps);
-end
 
-% display
 if dispChannels
   smartfig('Channels','reuse'); clf;
   plot(channel.spanValues, channel.spanResponse,'linewidth',2);
@@ -124,6 +105,7 @@ if dispChannels
   ylabel('Response (arb unit)');
   title('Response of each channel to all stim values');
 end
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%   getChannelWeights   %%
@@ -233,8 +215,6 @@ getArgs(varargin,{'model=sinFilter','numFilters=8','exponent=2'});
 if strcmp(model,'sinFilter')
   %[channelResponse channelOrientPref] = stickFilter(orientationVec,multiplier,numFilters,exponent);
   [channelResponse channelOrientPref] = sinFilter(orientationVec,multiplier,numFilters,exponent);
-elseif strcmp(model,'stickFilter')
-  [channelResponse channelOrientPref] = stickFilter(orientationVec,multiplier,numFilters,exponent);
 else
   disp(sprintf('(docinvor) Unknown filter type: %s',model));
 end
