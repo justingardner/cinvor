@@ -33,7 +33,7 @@ end
 
 instanceFieldName=[]; channelFieldName=[]; model=[]; numFilters=[]; exponent=[]; algorithm=[]; dispChannels=[]; verbose=[];
 % parse input arguments
-[~,~,preprocessArgs] = getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','model=sinFilter','numFilters=8','exponent=7','algorithm=pinv','dispChannels=0','verbose=0','fitNoiseModel=0','noiseModelGridSearchOnly=0','noiseModelFitTolerence=1','noiseModelGridSteps=10'});
+[~,~,preprocessArgs] = getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','model=sinFilter','numFilters=8','exponent=7','algorithm=pinv','dispChannels=0','verbose=0','fitNoiseModel=0','noiseModelGridSearchOnly=0','noiseModelFitTolerence=1','noiseModelGridSteps=10','fitNoise=0'});
 
 % see if we are passed in a cell array of rois. If so, then call buildClassifier
 % sequentially on each roi and put the output into the field specified by classField
@@ -91,6 +91,11 @@ channel.idealStimVals=stimVals;
 
 % get channel weights
 channel.channelWeights=getChannelWeights(channel.channelResponse, instanceMatrix,'algorithm',algorithm);
+if(fitNoise)
+  [channel.rho channel.sigma channel.tao channel.omega]=getNoiseParam(channel.channelResponse, instanceMatrix,channel.channelWeights);
+  [channel.posterior channel.posterior_mean channel.posterior_std] = getPosterior(channel,instanceMatrix)
+end
+
 % channel.channelWeights=channel.channelWeights./repmat(sum(channel.channelWeights,1),size(channel.channelWeights,1),1); % this will normalize the weights, not sure if it's correct 
 
 % pack up into a structure to return
@@ -133,15 +138,103 @@ else
   disp(sprintf('(buildChannels:getChannelWeights) Unknown algorithm %s.',algorithm));
 end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%     getNoiseParam     %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function [rho sigma tao omega] = getNoiseParam(channelResponse,instanceMatrix,channelWeights)
+rho_0 = 0.1;
+sigma_0 = 0.3;
+tao_0 = 0.7*ones(1,size(instanceMatrix,2));
+x_0 = [rho_0,sigma_0,tao_0];
+f = @(x)likelihood(x(1),x(2),x(3:end),channelResponse,instanceMatrix,channelWeights);
+A = [-eye(length(x_0));eye(length(x_0))];
+A(end,1) = 1;
+b = -0.001*ones(size(A,1),1); %avoid singularity
+b(length(x_0)+2:end) = 10;
+b(length(x_0) + 1) = 0.5;
+options = optimoptions('fmincon','MaxFunEvals',200000,'Algorithm','sqp');
+x = fmincon(f,x_0,A,b,[],[],[],[],[],options);
+rho = x(1);
+sigma = x(2);
+tao = x(3:end);
+omega = rho*tao'*tao + (1-rho)*diag(diag(tao'*tao))+sigma^2*channelWeights'*channelWeights; 
+
+
+function nll = likelihood(rho,sigma,tao,channelResponse,instanceMatrix,channelWeights)
+global thisError
+%rho = 0;
+sigma = 0;
+omega = rho*tao'*tao + (1-rho)*diag(diag(tao'*tao))+sigma^2*channelWeights'*channelWeights; 
+%omega = sigma*eye(size(channelWeights,2));
+%omegaInv = inv(omega);
+nll = 0;
+thisError = instanceMatrix - channelResponse*channelWeights;
+nll = nll + 1/2*size(channelResponse,1)*(log(2*pi) + 2*sum(log(diag(chol(omega))))); %2*sum(log(diag(chol(omega)))) is the logdet(omega)
+nll = nll + 1/2*sum(dot(thisError',(omega\thisError')));
+
+
+%nll = 0;
+%thisError = instanceMatrix - channelResponse*channelWeights;
+%nll = nll + 1/2*size(channelResponse,1)*log(2*pi*det(omega));
+%nll = nll + 1/2*size(channelResponse,1)*(log(2*pi) + 2*sum(log(diag(chol(omega))))); %2*sum(log(diag(chol(omega)))) is the logdet(omega)
+%nll = nll + 1/2*sum(dot(thisError',(omega\thisError')));
+%%disp(sigma)
+%%disp(rho)
+%%disp(mean(abs(tao)))
+%%disp(nll)
+%%if(isnan(sigma))
+%%  keyboard
+%%end
+%nll = nll + 1/2*thisError(i,:)*omegaInv*thisError(i,:)';
+
+%disp(nll)
+
+%omega = rho*tao'*tao + (1-rho)*diag(diag(tao'*tao))+sigma^2*channelWeights'*channelWeights; 
+%omegaInv = inv(omega);
+%nll2 = 0;
+%thisError = instanceMatrix - channelResponse*channelWeights;
+%for i = 1:size(channelResponse,1)
+%  nll2 = nll2 - log(sqrt(2*pi*norm(omega)));
+%  nll2 = nll2 + 1/2*thisError(i,:)*omegaInv*thisError(i,:)';
+%end
+%disp(nll-nll2)
+
+function [posterior posterior_mean posterior_std] = getPosterior(channel,instanceMatrix)
+omegaInv = inv(channel.omega);
+N_trials = size(instanceMatrix,1);
+posterior = zeros(N_trials,channel.span);
+posterior_mean = zeros(N_trials,1);
+posterior_std = zeros(N_trials,1);
+if(channel.span == 180)
+  multiplier = 2;
+else
+  multiplier = 1;
+end
+angles = deg2rad(1:multiplier:360);
+for i = 1:N_trials
+  for j = 1:channel.span
+    thisError = instanceMatrix(i,:)' - channel.channelWeights'*channel.spanResponse(j,:)';
+    posterior(i,j) = exp(-0.5*thisError'*omegaInv*thisError);
+  end
+  posterior(i,:) = posterior(i,:)/sum(posterior(i,:)); %normalization
+  posterior_mean(i) = circ_mean(angles',posterior(i,:)')/(2*pi)*(360/multiplier);
+  posterior_std(i) = circ_std(angles',posterior(i,:)')/(2*pi)*(360/multiplier);
+end
+
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%   getChannelResponse   %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [channelResponse channelOrientPref] = getChannelResponse(orientationVec,multiplier,varargin)
 
-getArgs(varargin,{'model=sinFilter','numFilters=8','exponent=7'});
+getArgs(varargin,{'model=sinFilter','numFilters=8','exponent=2'});
 
 if strcmp(model,'sinFilter')
+  %[channelResponse channelOrientPref] = stickFilter(orientationVec,multiplier,numFilters,exponent);
   [channelResponse channelOrientPref] = sinFilter(orientationVec,multiplier,numFilters,exponent);
+elseif strcmp(model,'stickFilter')
+  [channelResponse channelOrientPref] = stickFilter(orientationVec,multiplier,numFilters,exponent);
 else
   disp(sprintf('(docinvor) Unknown filter type: %s',model));
 end
@@ -171,6 +264,27 @@ filterOut = filterOut.*(filterOut>0);
 
 % apply exponent
 filterOut = filterOut.^filterExponent;
+
+% return filterOrientPref (which is just the filterPhase in deg divided by 2)
+filterOrientPref = r2d(filterPhase(1,:)/multiplier);
+
+
+function [filterOut filterOrientPref] = stickFilter(orientation,multiplier,numFilters,filterExponent)
+
+numOrientations=length(orientation);
+% get filter phases (evenly spaced)
+filterPhase = 0:360/numFilters:359;
+
+% get orientation and filter phase in radians
+orientation = d2r(orientation(:)*multiplier);
+filterPhase = d2r(filterPhase(:));
+
+% handle multiple phases (i.e. multiple filters)
+orientation = repmat(orientation,1,numFilters);
+filterPhase = repmat(filterPhase',numOrientations,1);
+
+% delta function
+filterOut = double((orientation-filterPhase) == 0);
 
 % return filterOrientPref (which is just the filterPhase in deg divided by 2)
 filterOrientPref = r2d(filterPhase(1,:)/multiplier);

@@ -8,58 +8,60 @@
 %
 %
 function [channelPrefs, channelTuning, chanFit, r2val] = fitCinvorForwardModel(instancesTrain,trainStimVals,instancesTest,testStimVals,m,e,varargin)
-
+dispFig = 0;
 % get arguments
-getArgs(varargin,{'zs=0'});
-
-plotMeanInstances(instancesTrain, instancesTest,trainStimVals,testStimVals);
-
-if zs
-  channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=1','zscore=1');
-else
-  channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=1');
+getArgs(varargin,{'zs=0','model=sinFilter','exponent=7'});
+if(dispFig)
+  plotMeanInstances(instancesTrain, instancesTest,trainStimVals,testStimVals);
 end
 
-[channelTuning, r2, classifyCorrTotal, stimValVector, predStimVal]=testChannels(instancesTest,testStimVals,channel);
+if zs
+  channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=0','zscore=1','fitNoise',0,'model',model,'exponent',exponent);
+else
+  channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=0','fitNoise',0,'model',model,'exponent',exponent);
+end
+
+[channelTuning, r2, classifyCorrTotal, stimValVector, predStimVal]=testChannels(instancesTest,testStimVals,channel,'fitNoise',0);
 channelPrefs=[channel.channelPref, channel.channelPref(end)+unique(diff(channel.channelPref))]; %just wrap around the end
 channelTuning=[channelTuning, channelTuning(1)]; %repeat the first response to wrap around
 %figure out the ideal response, basically the ideal response to the center stimulus
 centerIdx=find(channel.channelPref==channel.span/2);
 idealResp=channel.idealStimResponse(centerIdx,:);
 idealResp=[idealResp, idealResp(1)];
+if(dispFig)
+  mlrSmartfig(e.figTitle,'reuse'); 
+  subplot(3,2,2);
+  plot(channelPrefs,channelTuning,'o-','linewidth',2); hold on
+  plot(channelPrefs,idealResp,'g');
+  title('Channel tuning');
+  legend({'Avg test resp','Ideal resp'});
 
-mlrSmartfig(e.figTitle,'reuse'); 
-subplot(3,2,2);
-plot(channelPrefs,channelTuning,'o-','linewidth',2); hold on
-plot(channelPrefs,idealResp,'g');
-title('Channel tuning');
-legend({'Avg test resp','Ideal resp'});
+  subplot(3,2,4);
+  bar([r2.clAcc;r2.clOneshot;r2.clAvg]');
+  yaxis([0 1]);
+  title(['r2 for each stim class, grand avg r2:',num2str(r2.overall)]);
+  set(gca,'xticklabel',num2cell(trainStimVals));
+  legend({'accu','oneshot','avg'});
 
-subplot(3,2,4);
-bar([r2.clAcc;r2.clOneshot;r2.clAvg]');
-yaxis([0 1]);
-title(['r2 for each stim class, grand avg r2:',num2str(r2.overall)]);
-set(gca,'xticklabel',num2cell(trainStimVals));
-legend({'accu','oneshot','avg'});
-
-subplot(3,2,6);
-% predErr=r2d(circ_dist(d2r(stimValVector),d2r(predStimVal)));
-% hist(predErr);
-% title(['Prediction errors, accuracy=',num2str(classifyCorrTotal(1)/classifyCorrTotal(2))]);
-plot([r2.voxAcc;r2.voxOneshot;r2.voxAvg]');
-legend({'accu','oneshot','avg'});
-title('r2 value for each voxel');
-xlabel('voxel number');
+  subplot(3,2,6);
+  % predErr=r2d(circ_dist(d2r(stimValVector),d2r(predStimVal)));
+  % hist(predErr);
+  % title(['Prediction errors, accuracy=',num2str(classifyCorrTotal(1)/classifyCorrTotal(2))]);
+  plot([r2.voxAcc;r2.voxOneshot;r2.voxAvg]');
+  legend({'accu','oneshot','avg'});
+  title('r2 value for each voxel');
+  xlabel('voxel number');
+end
 chanFit=fitTuningWithVM(channelTuning, channelPrefs,m.rangeScaleFac,0);
 chanFit=chanFit(1,:);
-r2val=r2.overall;
-
+r2val=mean(r2.voxOneshot);
 
 %fit the channel response to a von Mises; note the input chanResp is
 %supposed to be two rows, used in real data for ipsi and contra ROI but in
 %the context of the simulation they are identical
 function fittedVals=fitTuningWithVM(chanResp,channelPref,rangeScaleFac,dispFig)
 chanResp=[chanResp;chanResp];
+fixedMean =1;
 
 if ~all(chanResp(:,1)==chanResp(:,end))
   disp('First and last element of channel response different, wrapping around it by appending the first element to the end.');
@@ -67,9 +69,13 @@ if ~all(chanResp(:,1)==chanResp(:,end))
 end
 
 paramInit=[pi,1,0,1]; %reasonable guesses of initial value
-[paramFit1,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(1,:));
-[paramFit2,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(2,:));
-
+if(fixedMean)
+  [paramFit1,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(1,:),[pi-0.01,0,0,0],[pi+0.01,1000,1000,1000]);
+  [paramFit2,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(2,:),[pi-0.01,0,0,0],[pi+0.01,1000,1000,1000]);
+else
+  [paramFit1,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(1,:));
+  [paramFit2,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(2,:));
+end
 xp= channelPref(1):1:channelPref(end)*rangeScaleFac;
 xpOri=xp/rangeScaleFac;
 

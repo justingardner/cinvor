@@ -21,10 +21,8 @@ mu=params(1);
 kappa=params(2);
 base=params(3);
 amp=params(4);
-
 % use libary function to calculate von mises
 vm=circ_vmpdf(x,mu,kappa);
-
 % normalize
 vm_norm=(vm-min(vm))/(max(vm)-min(vm));
 
