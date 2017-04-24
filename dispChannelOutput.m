@@ -5,7 +5,7 @@
 %       date: 09/07/16
 %    purpose: Displays channel output returned by testChannels
 %
-function statsStr = dispChannelOutput(channelOutput,channel,varargin)
+function [statsStr averageResponse steResponse shiftedStimVal] = dispChannelOutput(channelOutput,channel,varargin)
 
 % default stats string
 statsStr = '';
@@ -17,7 +17,7 @@ if nargin < 2
 end
 
 % get argments
-getArgs(varargin,{'MarkerFaceColor=k','MarkerEdgeColor=w','MarkerSize=8','likelihood=0'});
+getArgs(varargin,{'MarkerFaceColor=k','MarkerEdgeColor=w','MarkerSize=8','likelihood=0','suppressPlot=0'});
 
 if likelihood
   if ~isfield(channelOutput,'noiseModel')
@@ -30,7 +30,9 @@ if likelihood
   spanValues(1:halfSpanLength) = spanValues(1:halfSpanLength)-channel.span;
 
   % plot the values
-  myerrorbar(spanValues,channelOutput.noiseModel.meanLikelihood,'yError',channelOutput.noiseModel.steLikelihood,'MarkerFaceColor',MarkerFaceColor,'Symbol=-','LineWidth=2','yErrorBarType=fill');hold on
+  if ~suppressPlot
+    myerrorbar(spanValues,channelOutput.noiseModel.meanLikelihood,'yError',channelOutput.noiseModel.steLikelihood,'MarkerFaceColor',MarkerFaceColor,'Symbol=-','LineWidth=2','yErrorBarType=fill');hold on
+  end
   % stats string to return
   if isfield(channel,'noiseModel')
     statsStr = sprintf('rho=%0.3f sigma=%0.3f tau=%0.3f',channel.noiseModel.rho,channel.noiseModel.sigma,mean(channel.noiseModel.tau));
@@ -46,8 +48,9 @@ averageResponse = mean(shiftedResponse);
 steResponse = std(shiftedResponse)/sqrt(channelOutput.n);
 
 % plot the values
-myerrorbar(shiftedStimVal,averageResponse,'yError',steResponse,'MarkerFaceColor',MarkerFaceColor,'MarkerEdgeColor',MarkerEdgeColor,'MarkerSize',MarkerSize);hold on
-
+if ~suppressPlot
+  myerrorbar(shiftedStimVal,averageResponse,'yError',steResponse,'MarkerFaceColor',MarkerFaceColor,'MarkerEdgeColor',MarkerEdgeColor,'MarkerSize',MarkerSize);hold on
+end
 
 
 
