@@ -7,28 +7,32 @@
 %             training data, then test channels on test data.
 %
 %
-function [channelPrefs, channelTuning, chanFit, r2val] = fitCinvorForwardModel(instancesTrain,trainStimVals,instancesTest,testStimVals,m,e,varargin)
+function [channelPrefs, channelTuning, chanFit, r2val, channel, channelTuningXvals] = fitCinvorForwardModel(instancesTrain,trainStimVals,instancesTest,testStimVals,m,e,varargin)
 dispFig = 0;
 % get arguments
-getArgs(varargin,{'zs=0','model=sinFilter','exponent=7'});
+getArgs(varargin,{'zs=0','model=sinFilter','exponent=7','numFilters=8'});
 if(dispFig)
   plotMeanInstances(instancesTrain, instancesTest,trainStimVals,testStimVals);
 end
 
 if zs
-  channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=0','zscore=1','fitNoise',0,'model',model,'exponent',exponent);
+  channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=0','zscore=1','fitNoise',0,'model',model,'exponent',exponent,'numFilters',numFilters);
 else
-  channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=0','fitNoise',0,'model',model,'exponent',exponent);
+  channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=0','fitNoise',0,'model',model,'exponent',exponent,'numFilters',numFilters);
 end
 
-[channelTuning, r2, classifyCorrTotal, stimValVector, predStimVal]=testChannels(instancesTest,testStimVals,channel,'fitNoise',0);
-channelPrefs=[channel.channelPref, channel.channelPref(end)+unique(diff(channel.channelPref))]; %just wrap around the end
-channelTuning=[channelTuning, channelTuning(1)]; %repeat the first response to wrap around
-%figure out the ideal response, basically the ideal response to the center stimulus
-centerIdx=find(channel.channelPref==channel.span/2);
-idealResp=channel.idealStimResponse(centerIdx,:);
-idealResp=[idealResp, idealResp(1)];
+%[channelTuning, r2, classifyCorrTotal, stimValVector, predStimVal]=testChannels(instancesTest,testStimVals,channel,'fitNoise',0);
+channelOutput = testChannels(instancesTest,testStimVals,channel,'fitNoise',0);
+channelPrefs = [channel.channelPref, channel.channelPref(end)+unique(diff(channel.channelPref))]; %just wrap around the end
+channelTuning = channelOutput.averageChannelResponse;
+channelTuningXvals = channelOutput.averageChannelResponseXvals;
+
 if(dispFig)
+  %figure out the ideal response, basically the ideal response to the center stimulus
+  centerIdx=find(channel.channelPref==channel.span/2);
+  idealResp=channel.idealStimResponse(centerIdx,:);
+  idealResp=[idealResp, idealResp(1)];
+  % display
   mlrSmartfig(e.figTitle,'reuse'); 
   subplot(3,2,2);
   plot(channelPrefs,channelTuning,'o-','linewidth',2); hold on
@@ -52,14 +56,31 @@ if(dispFig)
   title('r2 value for each voxel');
   xlabel('voxel number');
 end
-chanFit=fitTuningWithVM(channelTuning, channelPrefs,m.rangeScaleFac,0);
-chanFit=chanFit(1,:);
-r2val=mean(r2.voxOneshot);
 
+if nargout ~= 1
+  % pass in x and y vals with a wrap around copied value (not sure why this is being done
+  % but keeping consistent with original code - this is no longer used by testCinvor so is
+  % only for any code that still uses this)
+  xVals = channelTuningXvals-channelTuningXvals(1);
+  xVals(end+1) = xVals(end)+min(diff(xVals));
+  yVals = [channelTuning channelTuning(1)];
+  chanFit=fitTuningWithVM(yVals,xVals , m.rangeScaleFac, 0);
+  chanFit=chanFit(1,:);
+  r2val=mean(channelOutput.r2.voxOneshot);
+else
+  % package up for return as single variable
+  channelPrefs = channelOutput;
+  channelPrefs.r2 = mean(channelOutput.r2.voxOneshot);;
+  channelPrefs.channel = channel;
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+%    fitTuningWithVM    %
+%%%%%%%%%%%%%%%%%%%%%%%%%
+function fittedVals=fitTuningWithVM(chanResp,channelPref,rangeScaleFac,dispFig)
 %fit the channel response to a von Mises; note the input chanResp is
 %supposed to be two rows, used in real data for ipsi and contra ROI but in
 %the context of the simulation they are identical
-function fittedVals=fitTuningWithVM(chanResp,channelPref,rangeScaleFac,dispFig)
 chanResp=[chanResp;chanResp];
 fixedMean =1;
 
@@ -69,9 +90,11 @@ if ~all(chanResp(:,1)==chanResp(:,end))
 end
 
 paramInit=[pi,1,0,1]; %reasonable guesses of initial value
+% nonlinear fit algorithm options
+options = optimoptions('lsqcurvefit','Display','off');
 if(fixedMean)
-  [paramFit1,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(1,:),[pi-0.01,0,0,0],[pi+0.01,1000,1000,1000]);
-  [paramFit2,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(2,:),[pi-0.01,0,0,0],[pi+0.01,1000,1000,1000]);
+  [paramFit1,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(1,:),[pi-0.01,0,0,0],[pi+0.01,1000,1000,1000],options);
+  [paramFit2,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(2,:),[pi-0.01,0,0,0],[pi+0.01,1000,1000,1000],options);
 else
   [paramFit1,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(1,:));
   [paramFit2,resnorm,residual,exitflag]=lsqcurvefit(@vonMises,paramInit,d2r(channelPref*rangeScaleFac),chanResp(2,:));

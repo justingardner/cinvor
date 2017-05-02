@@ -80,8 +80,9 @@ else
 end
 % get channel responses
 testChannelResponse=instanceMatrix*pinv(channel.channelWeights); 
-% and average
-avgTestResponse=getAverageChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.span/2);
+% and average around center channel
+[~,centerIndex] = min(abs(channel.channelPref-channel.span/2));
+[avgTestResponse avgTestResponseSTE avgTestResponseXvals]=getAverageChannelResponse(testChannelResponse, stimValVector, channel.channelPref, channel.channelPref(centerIndex));
 
 
 %Prediction/Identification: correlate channel response with the span response and
@@ -110,6 +111,8 @@ if nargout == 1
   channelOutput.stimVal = stimValVector;
   channelOutput.channelResponse = testChannelResponse;
   channelOutput.averageChannelResponse = avgTestResponse;
+  channelOutput.averageChannelResponseSTE = avgTestResponseSTE;
+  channelOutput.averageChannelResponseXvals = avgTestResponseXvals;
 end
 
 % get likelihood function
@@ -212,28 +215,80 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %    getAverageChannelResponse    %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function avgChannelResponse=getAverageChannelResponse(testChannelResponse,stimValVector,channelPref,channelCenter)
+function [avgChannelResponse avgChannelResponseSTE xVals] =getAverageChannelResponse(testChannelResponse,stimValVector,channelPref,channelCenter)
+
+% which stimulus values were presented
+uniqueStimVals = unique(stimValVector);
 
 % check whether the stim values match the channel preferences
-if ~isequal(unique(stimValVector), channelPref)
-  disp(sprintf('(testChannels) The current shift and average scheme is probably incorrect when channel preferences are different from the stimulus values - skipping.'));
+if ~isempty(setdiff(uniqueStimVals, channelPref))
   avgChannelResponse = [];
-  return
+  % figure out what the spacing between channels is
+  diffChannelPref = unique(diff(channelPref));
+  if length(diffChannelPref) ~= 1
+    disp(sprintf('(testChannels:getAverageChannelResponse) Uneven spacing of channels - unable to average'));
+    return
+  end
+  % now figure out how far each stimulus value is from the centers of the channels
+  stimSpacing = unique(mod(uniqueStimVals-channelPref(1),diffChannelPref));
+  % make an xVals array that contains all the possible spacings
+  xVals = [];
+  for iSpacing = 1:length(stimSpacing)
+    xVals = [xVals channelPref+stimSpacing(iSpacing)];
+  end
+  xVals = sort(xVals);
+else
+  % normally - we just have xVals at the channelPref
+  xVals = channelPref;
 end
 
-centerIdx=find(channelPref==channelCenter);
+% confirm that we were asked to center to one of the actual channels
+centerIdx=find(channelCenter==channelPref);
 if isempty(centerIdx)
-  disp(['should have a channel centered on ', num2str(channelCenter)]);
-  keyboard;
+  % no exact match for desired channel center, so shift to
+  % closest one.
+  [~,centerIdx] = min(abs(channelCenter-channelPref));
+  channelCenter = channelPref(centerIdx);
+  disp(sprintf('(testChannels) Averaging around filter at %0.2f',channelCenter));
 end
-allStimResp=[];
-for i=1:length(channelPref)
-  theseRespIdx=stimValVector==channelPref(i);
-  theseStimResp=testChannelResponse(theseRespIdx,:);
-  allStimResp=[allStimResp; circshift(theseStimResp,[0 centerIdx-i])];
-end
-avgChannelResponse=mean(allStimResp,1);
 
+% set xVals to be centered around the desired center
+xVals = xVals - channelCenter;
+
+% recenter all channel responses around actual
+% in the case, the channel preferences align with the
+% what stimulus value was presented, so you just
+% have to shift by an appropriate amount to recenter
+allStimResp=nan(length(stimValVector),length(xVals));
+iResponse = 1;
+for iStimVal = 1:length(uniqueStimVals)
+  % find all matching stimulus presentations
+  theseResponses = testChannelResponse(stimValVector==uniqueStimVals(iStimVal),:);
+  nResponses = size(theseResponses,1);
+  % compute needed shift - first compute the shift required to align
+  % to the desired channel
+  [minDiff,thisChannelIndex] = min(abs(uniqueStimVals(iStimVal)-channelPref));
+  shiftAmount = centerIdx-thisChannelIndex-(~isequal(minDiff,0));
+  % figure out what xVals these correspond to;
+  thisXvals = channelPref+minDiff-channelCenter;
+  [~,~,xIndexes] = intersect(thisXvals,xVals);
+  % shift and add to array
+  allStimResp(iResponse:iResponse+nResponses-1,xIndexes) = circshift(theseResponses,[0 shiftAmount]);
+  % Debug output
+  % disp(sprintf('%0.2f %s',uniqueStimVals(iStimVal),mlrnum2str(allStimResp(iResponse,:))));
+  iResponse = iResponse+nResponses;
+end
+
+% average the channel responses and compute standard error
+for iXval = 1:length(xVals)
+  validResponses = ~isnan(allStimResp(:,iXval));
+  avgChannelResponse(iXval) = mean(allStimResp(validResponses,iXval));
+  avgChannelResponseSTE(iXval) = std(allStimResp(validResponses,iXval))/sqrt(sum(validResponses));
+end
+
+%%%%%%%%%%%%%%%%%%%%%%
+%    getPosterior    %
+%%%%%%%%%%%%%%%%%%%%%%
 function [posterior posterior_mean posterior_std] = getPosterior(channel,instanceMatrix)
 omegaInv = inv(channel.omega);
 N_trials = size(instanceMatrix,1);

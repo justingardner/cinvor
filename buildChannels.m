@@ -228,13 +228,12 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [channelResponse channelOrientPref] = getChannelResponse(orientationVec,multiplier,varargin)
 
-getArgs(varargin,{'model=sinFilter','numFilters=8','exponent=2'});
+getArgs(varargin,{'model=sinFilter','numFilters=8','exponent=2','filterPhaseOffset=0'});
 
 if strcmp(model,'sinFilter')
-  %[channelResponse channelOrientPref] = stickFilter(orientationVec,multiplier,numFilters,exponent);
-  [channelResponse channelOrientPref] = sinFilter(orientationVec,multiplier,numFilters,exponent);
+  [channelResponse channelOrientPref] = sinFilter(orientationVec,multiplier,numFilters,exponent,filterPhaseOffset);
 elseif strcmp(model,'stickFilter')
-  [channelResponse channelOrientPref] = stickFilter(orientationVec,multiplier,numFilters,exponent);
+  [channelResponse channelOrientPref] = stickFilter(orientationVec,multiplier,numFilters,exponent,filterPhaseOffset);
 else
   disp(sprintf('(docinvor) Unknown filter type: %s',model));
 end
@@ -242,11 +241,12 @@ end
 %%%%%%%%%%%%%%%%%%%
 %%   sinFilter   %%
 %%%%%%%%%%%%%%%%%%%
-function [filterOut filterOrientPref] = sinFilter(orientation,multiplier,numFilters,filterExponent)
+function [filterOut filterOrientPref] = sinFilter(orientation,multiplier,numFilters,filterExponent,filterPhaseOffset)
 
 numOrientations=length(orientation);
-% get filter phases (evenly spaced)
-filterPhase = 0:360/numFilters:359;
+
+% get filter phases (evenly spaced) starting at filterPhaseOffset
+filterPhase = filterPhaseOffset:360/numFilters:(359+filterPhaseOffset);
 
 % get orientation and filter phase in radians
 orientation = d2r(orientation(:)*multiplier);
@@ -268,12 +268,15 @@ filterOut = filterOut.^filterExponent;
 % return filterOrientPref (which is just the filterPhase in deg divided by 2)
 filterOrientPref = r2d(filterPhase(1,:)/multiplier);
 
-
-function [filterOut filterOrientPref] = stickFilter(orientation,multiplier,numFilters,filterExponent)
+%%%%%%%%%%%%%%%%%%%%%
+%    sitckFilter    %
+%%%%%%%%%%%%%%%%%%%%%
+function [filterOut filterOrientPref] = stickFilter(orientation,multiplier,numFilters,filterExponent,filterPhaseOffset)
 
 numOrientations=length(orientation);
-% get filter phases (evenly spaced)
-filterPhase = 0:360/numFilters:359;
+
+% get filter phases (evenly spaced) starting at filterPhaseOffset
+filterPhase = filterPhaseOffset:360/numFilters:(359+filterPhaseOffset);
 
 % get orientation and filter phase in radians
 orientation = d2r(orientation(:)*multiplier);
