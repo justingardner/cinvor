@@ -12,35 +12,12 @@ getArgs(varargin,{'dataDir=~/data/cinvor2','analName=decon1gIns','nFold=5','subj
 
 % number of subjects
 nSubjects = length(subjectList);
-simResults = simulateNeuralTuningWidths(dataDir,'n=10','nNoiseVals=10','recompute=0','channelExponent=3','nStimVals=8');
-dispSimulateNeuralTuningWidths(simResults);
-keyboard
-simResults = simulateNeuralTuningWidths(dataDir,'n=100','nNoiseVals=40','recompute=0');
 
-simResults = simulateNeuralTuningWidths(dataDir,'n=100','nNoiseVals=40','recompute=1','channelExponent=3','nStimVals=8');
-keyboard
-%dispSimulateNeuralTuningWidths(simResults);
-simResults = simulateNeuralTuningWidths(dataDir,'n=100','nNoiseVals=40','recompute=0','filterType=stickFilter');
-%dispSimulateNeuralTuningWidths(simResults);
 
-keyboard
+dispFig3(dataDir);
 
-% simulate range of neural tuning widths
-simResults = simulateNeuralTuningWidths(dataDir,'n=10','nNoiseVals=10','recompute=1','channelExponent=2');
-%simResults = simulateNeuralTuningWidths(dataDir,'n=1000','nNoiseVals=50','recompute=0');
-simResults = simulateNeuralTuningWidths(dataDir,'n=500','nNoiseVals=50','recompute=0','filterType=stickFilter');
-simResults = simulateNeuralTuningWidths(dataDir,'n=500','nNoiseVals=50','recompute=0','filterType=channelExponent');
-simResults = simulateNeuralTuningWidths(dataDir,'n=1000','nNoiseVals=50','recompute=0','filterType=stickFilter');
-simResults = simulateNeuralTuningWidths(dataDir,'n=1000','nNoiseVals=50','recompute=0','filterType=channelExponent');
-%dispSimulateNeuralTuningWidths(simResults);
 
-simResults = simulateNeuralTuningWidths(dataDir,'n=1000','nNoiseVals=50','recompute=0','channelExponent=2');
-%dispSimulateNeuralTuningWidths(simResults);
-keyboard
-
-%simulateNeuralTuningWidths(dataDir,'filterType=stickFilter','n=100');
-keyboard
-
+% runf data analysis
 contrastNames = {'high','low'};
 for iContrast = 1:length(contrastNames)
   % get contrast name
@@ -336,22 +313,25 @@ for iHemisphere = 1:size(contraResponse,1)
 end
 disppercent(inf);
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %    simulateNeuralTuningWidths    %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function simResults = simulateNeuralTuningWidths(dataDir,varargin)
 
-disp(sprintf('(testCinvor) Number of parallel workers: %i',mlrNumWorkers(1)));
 % get default arguments
 filterType = [];channelExponent = [];nNoiseVals = [];n = [];filterType = [];recompute = [];
-getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8'});
+getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8','numFilters=[]'});
 
 % compute number of filters needed for exponent
-numFilters = channelExponent+1;
+if isempty(numFilters)
+  numFilters = channelExponent+1;
+end
 
 % set the experiment (number of orientations to test and repetitions)
-e = specifyCinvorExperiment('stimLevel',nStimVals,'trialPerStim=21');
+simResults.e = specifyCinvorExperiment('stimLevel',nStimVals,'trialPerStim=21');
+simResults.numFilters = numFilters;
+simResults.channelExponent = channelExponent;
+simResults.filterType = filterType;
 
 % Setting kappa values to use
 % using fitVonMises to convert from half-width-at-half-height in degrees to kappa
@@ -370,6 +350,8 @@ if ~isequal(recompute,1) && isfile(simName)
   disp(sprintf('(testCinvor) Loading precomputed file: %s',simName));
   load(simName);
 else
+  % get / set number of workers for the parfor below
+  disp(sprintf('(testCinvor) Number of parallel workers: %i',mlrNumWorkers(1)));
   % recompute
   dispHeader(sprintf('(testCinvor:simulateNeuralTuningWdiths)\nExponent: %i filterType: %s nStimVals: %i\nNoise levels: %i Kappa values: %i Num simulations: %i',channelExponent,filterType,nStimVals,nNoiseVals,nKappa,n));
   disppercent(-inf,sprintf('%i total simulations',nNoiseVals*nKappa*n));
@@ -383,32 +365,35 @@ else
     % run simulation over tuning widths
     for iKappa = 1:nKappa
       % set the model parameters
-      m = setCinvorModel(e,'kappa',simResults.kappa(iKappa),'noise',simResults.noiseVals(iNoise));
+      m = setCinvorModel(simResults.e,'kappa',simResults.kappa(iKappa),'noise',simResults.noiseVals(iNoise));
       % n simulations
-      for iSimulation = 1:n
+      parfor iSimulation = 1:n
 	warning off;
 	% get train and test instances
-	trainInstances = getCinvorInstances(m,e);
-	testInstances = getCinvorInstances(m,e);
+	trainInstances = getCinvorInstances(m,simResults.e);
+	testInstances = getCinvorInstances(m,simResults.e);
 	% compute forward model
-	modelOutput(iSimulation) = fitCinvorForwardModel(trainInstances,e.stimVals,testInstances,e.stimVals,m,e,'model',filterType,'exponent',channelExponent,'numFilters',numFilters);
+	channel(iSimulation) = buildChannels(trainInstances,simResults.e.stimVals,'dispChannels=0','fitNoise',0,'model',filterType,'exponent',channelExponent,'numFilters',numFilters);
+	% test on test instances
+	channelOutput(iSimulation) = testChannels(testInstances,simResults.e.stimVals,channel(iSimulation),'fitNoise',0);
 	% do von mises fit
-	vonMisesFit(iSimulation) = fitVonMises(modelOutput(iSimulation).averageChannelResponseXvals,modelOutput(iSimulation).averageChannelResponse,'dispFit=0');
+	vonMisesFit(iSimulation) = fitVonMises(channelOutput(iSimulation).averageChannelResponseXvals,channelOutput(iSimulation).averageChannelResponse,'dispFit=0');
 	halfWidth(iSimulation) = vonMisesFit(iSimulation).params.halfWidthAtHalfHeight;
       end
-      %init channel responses if necessary
-      nXvals = length(modelOutput(1).averageChannelResponseXvals);
+      % init channel responses if necessary
+      nXvals = length(channelOutput(1).averageChannelResponseXvals);
       if ~isfield(simResults,'channelResponse')
 	simResults.channelResponse = nan(nKappa,nNoiseVals,n,nXvals);
       end
-      % put into return variable
-      simResults.m(iKappa,iNoise) = m;
-      simResults.channel = modelOutput(1).channel;
-      simResults.channelResponse(iKappa,iNoise,:,:) = reshape([modelOutput(:).averageChannelResponse],nXvals,n)';
-      simResults.channelXvals = modelOutput(1).averageChannelResponseXvals;
-      simResults.r2(iKappa,iNoise,:) = [modelOutput(:).r2];
+      % save channel Responses
+      simResults.channelResponse(iKappa,iNoise,:,:) = reshape([channelOutput(:).averageChannelResponse],nXvals,n)';
       simResults.vonMisesFit(iKappa,iNoise,:) = vonMisesFit;
       simResults.halfWidth(iKappa,iNoise,:) = halfWidth;
+      simResults.r2(iKappa,iNoise,:) = [channelOutput(:).r2];
+      % put other variables into siResults
+      simResults.m(iKappa,iNoise) = m;
+      simResults.channel = channel(1);
+      simResults.channelXvals = channelOutput(1).averageChannelResponseXvals;
       % display done
       disppercent(calcPercentDone(iNoise,nNoiseVals,iKappa,nKappa));
       %channel,m,channelResponse,fit,r2,vonMisesFit,halfWidth
@@ -419,16 +404,30 @@ else
 end
 warning on
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %    dispSimulateNeuralTuningWidths    %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function dispSimulateNeuralTuningWidths(simResults)
+function dispSimulateNeuralTuningWidths(simResults,varargin)
 
-f1 = mlrSmartfig('testCinvorTuningWidths','reuse');
-f2 = mlrSmartfig('testCinvorTuningWidths2','reuse');
-clf(f1);clf(f2);
+getArgs(varargin,{'f1=[]','f2=[]','subplotInfo=[]'});
 
+if isempty(f1)
+  f1 = mlrSmartfig('testCinvorTuningWidths','reuse');
+  clf(f1);
+end
+if isempty(f2)
+  f2 = mlrSmartfig('testCinvorTuningWidths2','reuse');
+  clf(f2);
+end
+
+% calculate actual tuning width
+[~,stimIndex] = min(abs(simResults.channel.idealStimVals-90));
+channelResponse = simResults.channel.idealStimResponse(stimIndex,:);
+x = simResults.channel.channelPref;
+fit = fitVonMises(x-90,channelResponse,'dispFit=0');
+disp(sprintf('(testCinvor:dispSimulateNeuralTuningWidths) Actual tuning width: %0.2f',fit.params.halfWidthAtHalfHeight));
+
+% get mean channel response
 xVals = simResults.channelXvals;
 meanResponse = squeeze(mean(simResults.channelResponse,3));
 
@@ -439,7 +438,7 @@ for iKappa = 1:length(simResults.kappa)
   halfWidth = squeeze(simResults.halfWidth(iKappa,:,:));
   % bin by r2
   r2binWidth = 0.05;
-  r2bins = 0:r2binWidth:(1-r2binWidth/2);
+  r2bins = [0:r2binWidth:(1-r2binWidth/2) 1];
   for iBin = 1:length(r2bins)
     % get the median value across the bin
     halfWidthBin(iBin) = median(halfWidth((r2(:)>=r2bins(iBin)) & (r2(:)<(r2bins(iBin)+r2binWidth))));
@@ -447,13 +446,12 @@ for iKappa = 1:length(simResults.kappa)
   
   % color to plot width
   c = getSmoothColor(iKappa,length(simResults.kappa),'cool');
-  % plot r2 vs halfWidth
-  subplot(2,1,1);
-  plot(r2(:),halfWidth(:),'o','MarkerFaceColor',c,'MarkerEdgeColor','w');hold on
   % plot summaries
-  subplot(2,1,2);
+  if ~isempty(subplotInfo)
+    subplot(subplotInfo(1),subplotInfo(2),subplotInfo(3));
+  end
   % plot
-  plot(r2bins+r2binWidth/2,halfWidthBin,'o-','MarkerFaceColor',c,'MarkerEdgeColor','w','Color',c);hold on
+  plot([r2bins(1:end-1)+r2binWidth/2 1],halfWidthBin,'o-','MarkerFaceColor',c,'MarkerEdgeColor','w','Color',c);hold on
 end
 
 
@@ -462,11 +460,10 @@ targetr2 = [0.25 0.5 1];r2binwidth = 0.25;
 figure(f2)
 for iR2 = 1:length(targetr2)
   for iKappa = 1:length(simResults.kappa)
-
     % get all simulations with the desired r2 in the bin
     r2 = squeeze(simResults.r2(iKappa,:,:));
     [noiseVals,simulationNums] = find((r2 > (targetr2(iR2)-r2binwidth)) & (r2 < (targetr2(iR2)+r2binwidth)));
-    disp(sprintf('(testCinvor:dispSimulateNeuralTuningWidths) Found %i simulations for r2: %0.3f',length(noiseVals),targetr2(iR2)));
+    %disp(sprintf('(testCinvor:dispSimulateNeuralTuningWidths) Found %i simulations for r2: %0.3f',length(noiseVals),targetr2(iR2)));
     % no make a matrix of all of their channel responses
     channelResponses = [];
     for iSim = 1:length(noiseVals)
@@ -482,15 +479,15 @@ for iR2 = 1:length(targetr2)
   end
 end
 
-keyboard
-
 % label axis
 figure(f1)
-subplot(2,1,1);
+if ~isempty(subplotInfo)
+  subplot(subplotInfo(1),subplotInfo(2),subplotInfo(3));
+end
+hline(fit.params.halfWidthAtHalfHeight);
 xlabel('r2');  ylabel('Channel model width');
-drawPublishAxis;
-subplot(2,1,2);
-xlabel('r2');  ylabel('Channel model width');
+a = axis;
+yaxis(0,40);
 drawPublishAxis;
 
 figure(f2)
@@ -504,3 +501,23 @@ end
 
 
 
+
+
+%%%%%%%%%%%%%%%%%
+%    dispFig3   %
+%%%%%%%%%%%%%%%%%
+function dispFig3(dataDir)
+
+% simulate range of neural tuning widths
+simResults3 = simulateNeuralTuningWidths(dataDir,'n=500','nNoiseVals=50','recompute=0','channelExponent=3','nStimVals=8','numFilters=8');
+simResultsStick = simulateNeuralTuningWidths(dataDir,'n=500','nNoiseVals=50','recompute=0','channelExponent=7','nStimVals=8','numFilters=8','filterType=stickFilter');
+simResults7 = simulateNeuralTuningWidths(dataDir,'n=500','nNoiseVals=50','recompute=0','channelExponent=7','nStimVals=8','numFilters=8');
+
+%dispSimulateNeuralTuningWidths(simResults);
+keyboard
+
+
+f = mlrSmartfig('testCinvor3','reuse');clf(f);
+dispSimulateNeuralTuningWidths(simResults3,'f1',f,'subplotInfo',[1 3 1]);
+dispSimulateNeuralTuningWidths(simResults7,'f1',f,'subplotInfo',[1 3 2]);
+dispSimulateNeuralTuningWidths(simResultsStick,'f1',f,'subplotInfo',[1 3 3]);

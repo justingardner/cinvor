@@ -21,7 +21,9 @@ else
   channel=buildChannels(instancesTrain,trainStimVals,'dispChannels=0','fitNoise',0,'model',model,'exponent',exponent,'numFilters',numFilters);
 end
 
+keyboard
 %[channelTuning, r2, classifyCorrTotal, stimValVector, predStimVal]=testChannels(instancesTest,testStimVals,channel,'fitNoise',0);
+
 channelOutput = testChannels(instancesTest,testStimVals,channel,'fitNoise',0);
 channelPrefs = [channel.channelPref, channel.channelPref(end)+unique(diff(channel.channelPref))]; %just wrap around the end
 channelTuning = channelOutput.averageChannelResponse;

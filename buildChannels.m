@@ -52,7 +52,6 @@ if isfield(instances{1},instanceFieldName) && isfield(instances{1},'name')
   return
 end
 
-
 % preprocess instances
 [instances channel] = preprocessInstances(instances,'args',preprocessArgs);
 
@@ -96,6 +95,7 @@ if(fitNoise)
   [channel.posterior channel.posterior_mean channel.posterior_std] = getPosterior(channel,instanceMatrix)
 end
 
+
 % channel.channelWeights=channel.channelWeights./repmat(sum(channel.channelWeights,1),size(channel.channelWeights,1),1); % this will normalize the weights, not sure if it's correct 
 
 % pack up into a structure to return
@@ -104,6 +104,29 @@ channel.info.numVoxels = size(instanceMatrix,2);
 channel.info.numFilters=numFilters;
 channel.info.exponent=exponent;
 channel.info.algorithm=algorithm;
+
+% FIX, FIX, instanceMatrixOnlyOne is for testing only
+%inst = [];
+%for istim=1:length(instances)
+%  inst = [inst; instances{istim}(1,1:8)];
+%end
+%inst = inst-repmat(mean(inst),size(inst,1),1);
+%resp = channel.idealStimResponse;
+%resp([1 3 5 7],end+1) = 1;
+%resp([2 4 6 8],end+1) = 1;
+%resp = channel.channelResponse;
+% and  one for mean response
+%w = ((resp'*resp)^-1)*resp'*inst;
+%ifit = resp*w;
+%plot(ifit(:),inst(:),'k.');
+%sqrt(sum((ifit(:) - inst(:)).^2))
+
+%inst1 = inst([1 3 5 7],:);
+%inst2 = inst([2 4 6 8],:);
+%resp1 = resp([1 3 5 7],:);
+%resp2 = resp([2 4 6 8],:);
+%w1 = pinv(resp1)*inst1;
+%w2 = pinv(resp2)*inst2;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % fit van Bergen et al. NN 18:1728-30 noise model

@@ -46,7 +46,7 @@ if any(nargin == [0])
 end
 
 % parse input arguments
-getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0','fitNoise=1','doClassify=1'});
+getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','verbose=0','fitNoise=1','doClassify=0','dor2=1'});
 
 if isfield(instances{1},instanceFieldName) && isfield(instances{1},'name')
   for iROI = 1:length(instances)
@@ -104,7 +104,6 @@ for i=1:length(stimVals)
   predInstances(i,:)=thisResp*channel.channelWeights;
 end
 
-
 % package up
 if nargout == 1
   channelOutput.n = length(stimValVector);
@@ -144,6 +143,8 @@ if doClassify
   nvox=size(predInstances,2);
 
   %Now calculate a r2 value for the actual test data
+  % JG: This is probably? redundant with the dor2 computation
+  % below - (this is Taosheng's code here).
   allTestInstance=[]; allPredInstance=[];
   for i=1:nclass
     thisTestClass=instances{i}; 
@@ -201,10 +202,48 @@ if doClassify
   end
   % package up into one single return value 
   if nargout == 1
-    channelOutput.r2 = r2;
-    channelOutput.classifyCorrect = classifyCorrTotal;
-    channelOutput.predictedStimVal = predStimVal;
+    channelOutput.classify.r2 = r2;
+    channelOutput.classify.correct = classifyCorrTotal;
+    channelOutput.classify.predictedStimVal = predStimVal;
   end
+end
+
+% compute r2
+if dor2
+  clear r2;
+  % first get ideal response to each stimulus
+  if isequal(stimVals,channel.idealStimVals)
+    % grab the precomputed ideal responses
+    idealChannelResponse = channel.idealStimResponse;
+  else
+    % get the ideal channel responses
+    for iStimVal = 1:length(stimVals)
+      % getting from the field "spanResponse" which is precomputed - might
+      % want to fix this later to actually compute the response according to the filters
+      % but that involves pulling out the code from buildChannels here.
+      [~,spanIndex] = min(abs(stimVals(iStimVal)-channel.spanValues));
+      idealChannelResponse(iStimVal,:) = channel.spanResponse(spanIndex,:);
+    end
+  end
+
+  % now, for each stimulus values
+  for iStimVal = 1:length(stimVals)
+    % compute what the voxel response should be
+    predictedVoxResponse = idealChannelResponse(iStimVal,:)*channel.channelWeights;
+    % make a prediction for each presentation of the stimulus
+    nRepeats = size(instances{iStimVal},1);
+    predictedVoxResponse = repmat(predictedVoxResponse,nRepeats,1);
+    % get residual variance
+    residualVariance = sum(sum((instances{iStimVal}-predictedVoxResponse).^2));
+    % get original variance (sum-of-squares around mean across voxels)
+    nVoxs = size(instances{iStimVal},2);
+    voxelMean = repmat(mean(instances{iStimVal},2),1,nVoxs);
+    originalVariance = sum(sum((instances{iStimVal}-voxelMean).^2));
+    % get r2
+    r2(iStimVal) = 1-residualVariance/originalVariance;
+  end
+  % save in output
+  channelOutput.r2 = mean(r2);
 end
 
 % just to return the right argument
