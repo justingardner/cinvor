@@ -21,20 +21,13 @@ end
 % responses across trials, noise is added. The noiseRatio variable controls the
 % magnitude of noise. Also note no time-domain convolution is used as we are not
 % modeling fMRI response over time, just the neural responses summed across neurons within a voxel.
+% JG: note that most of the code here has been moved into setCinvorModel so as not
+% to repeat the computation.
 instances={};
-for i=1:e.stimLevel
-  thisStimVal=d2r(e.stimVals(i)); %stimulus value for this current level
-  resp=[];
-  for j=1:m.neuronsPerVox %loop across neurons within each voxel
-    thisPrefStim=d2r(m.prefStim(j));
-    resp(:,j)=circ_vmpdf(repmat(thisStimVal,1,m.nVoxels)*m.rangeScaleFac,thisPrefStim*m.rangeScaleFac,m.kappa);
-  end
-  wresp=resp.*m.ws; %weight each neurons' response in each voxel
-  voxResp=sum(wresp,2); %sum all neurons within a voxel
-  voxResp=voxResp'; % reorient to fit the instances structure
-  %noiseSD=mean(voxResp)*m.noise;
-  noiseSD=m.noise; %additive, not multiplicative noise model
-  instances{i}=repmat(voxResp*m.amplitude, e.trialPerStim, 1)+randn(e.trialPerStim, m.nVoxels)*noiseSD; %repeat over trials and add noise
+
+for iStimVal = 1:e.stimLevel
+  % additive, noise is added on to pure voxel responses to get response
+  instances{iStimVal}=m.voxelResponse{iStimVal}+randn(e.trialPerStim, m.nVoxels)*m.noiseSTD;
 end
 
 % scale by amplitude

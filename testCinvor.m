@@ -13,10 +13,19 @@ getArgs(varargin,{'dataDir=~/data/cinvor2','analName=decon1gIns','nFold=5','subj
 % number of subjects
 nSubjects = length(subjectList);
 
+%n = 500;
+%nNoiseVals = 50;
+%recompute = 0;
+%simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8');
+%f = mlrSmartfig('testCinvor_r2plot');;
+%dispSimulateNeuralTuningWidths(simResults,'f1',f,'subplotInfo',[1 2 1]);
+%dispSimulateNeuralTuningWidths(simResults,'f1',f,'subplotInfo',[1 2 2],'r2plot',0);
+%keyboard
 
-dispFig3(dataDir);
-
-
+dispFig4(dataDir,figDir);
+% make figure 3
+dispFig3(dataDir,figDir);
+return
 % runf data analysis
 contrastNames = {'high','low'};
 for iContrast = 1:length(contrastNames)
@@ -320,7 +329,7 @@ function simResults = simulateNeuralTuningWidths(dataDir,varargin)
 
 % get default arguments
 filterType = [];channelExponent = [];nNoiseVals = [];n = [];filterType = [];recompute = [];
-getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8','numFilters=[]'});
+getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8','numFilters=[]','weighting=random','kConcentrated=[]'});
 
 % compute number of filters needed for exponent
 if isempty(numFilters)
@@ -332,19 +341,25 @@ simResults.e = specifyCinvorExperiment('stimLevel',nStimVals,'trialPerStim=21');
 simResults.numFilters = numFilters;
 simResults.channelExponent = channelExponent;
 simResults.filterType = filterType;
+simResults.kConcentrated = kConcentrated;
 
 % Setting kappa values to use
 % using fitVonMises to convert from half-width-at-half-height in degrees to kappa
-simResults.kappa = fitVonMises([],[],'halfWidthAtHalfHeight',15:5:60);
+simResults.kappa = [inf fitVonMises([],[],'halfWidthAtHalfHeight',10:5:60)];
 nKappa = length(simResults.kappa);
 
 % values of noise on voxels
 simResults.noiseVals = [0 logspace(log10(0.025),log10(15),nNoiseVals-1)];
 
 % make simulation name to save under
-simName = sprintf('kappaSimulation_n%i_noise_%i_e%i_%s.mat',n,nNoiseVals,channelExponent,filterType);
+dispStr = '';
+simName = sprintf('kappaSimulation_n%i_noise_%i_e%i_%s',n,nNoiseVals,channelExponent,filterType);
+if ~isempty(kConcentrated) && strcmp(lower(weighting),'concentrated')
+  simName = sprintf('%s_kConcentrate_%ideg',simName,round(fitVonMises([],[],'kappa',kConcentrated)));
+  dispStr = sprintf('Concentrated weighting: %i',round(fitVonMises([],[],'kappa',kConcentrated)));
+end
 simName = fullfile(dataDir,simName);
-
+simName = setext(simName,'mat');
 
 if ~isequal(recompute,1) && isfile(simName)
   disp(sprintf('(testCinvor) Loading precomputed file: %s',simName));
@@ -353,7 +368,8 @@ else
   % get / set number of workers for the parfor below
   disp(sprintf('(testCinvor) Number of parallel workers: %i',mlrNumWorkers(1)));
   % recompute
-  dispHeader(sprintf('(testCinvor:simulateNeuralTuningWdiths)\nExponent: %i filterType: %s nStimVals: %i\nNoise levels: %i Kappa values: %i Num simulations: %i',channelExponent,filterType,nStimVals,nNoiseVals,nKappa,n));
+  dispHeader(sprintf('(testCinvor:simulateNeuralTuningWdiths)\nExponent: %i filterType: %s nStimVals: %i\nNoise levels: %i Kappa values: %i Num simulations: %i\n%s',channelExponent,filterType,nStimVals,nNoiseVals,nKappa,n,dispStr));
+
   disppercent(-inf,sprintf('%i total simulations',nNoiseVals*nKappa*n));
 
   % init variables
@@ -365,7 +381,7 @@ else
     % run simulation over tuning widths
     for iKappa = 1:nKappa
       % set the model parameters
-      m = setCinvorModel(simResults.e,'kappa',simResults.kappa(iKappa),'noise',simResults.noiseVals(iNoise));
+      m = setCinvorModel(simResults.e,'kappa',simResults.kappa(iKappa),'noise',simResults.noiseVals(iNoise),'weighting',weighting,'kConcentrated',kConcentrated);
       % n simulations
       parfor iSimulation = 1:n
 	warning off;
@@ -387,7 +403,7 @@ else
       end
       % save channel Responses
       simResults.channelResponse(iKappa,iNoise,:,:) = reshape([channelOutput(:).averageChannelResponse],nXvals,n)';
-      simResults.vonMisesFit(iKappa,iNoise,:) = vonMisesFit;
+      %simResults.vonMisesFit(iKappa,iNoise,:) = vonMisesFit;
       simResults.halfWidth(iKappa,iNoise,:) = halfWidth;
       simResults.r2(iKappa,iNoise,:) = [channelOutput(:).r2];
       % put other variables into siResults
@@ -409,7 +425,7 @@ warning on
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function dispSimulateNeuralTuningWidths(simResults,varargin)
 
-getArgs(varargin,{'f1=[]','f2=[]','subplotInfo=[]'});
+getArgs(varargin,{'f1=[]','f2=[]','subplotInfo=[]','r2plot',1});
 
 if isempty(f1)
   f1 = mlrSmartfig('testCinvorTuningWidths','reuse');
@@ -433,17 +449,25 @@ meanResponse = squeeze(mean(simResults.channelResponse,3));
 
 figure(f1);
 for iKappa = 1:length(simResults.kappa)
-  % grab r2 and halfWidth values
-  r2 = squeeze(simResults.r2(iKappa,:,:));
-  halfWidth = squeeze(simResults.halfWidth(iKappa,:,:));
-  % bin by r2
-  r2binWidth = 0.05;
-  r2bins = [0:r2binWidth:(1-r2binWidth/2) 1];
-  for iBin = 1:length(r2bins)
-    % get the median value across the bin
-    halfWidthBin(iBin) = median(halfWidth((r2(:)>=r2bins(iBin)) & (r2(:)<(r2bins(iBin)+r2binWidth))));
+  if r2plot
+    % grab r2 and halfWidth values
+    r2 = squeeze(simResults.r2(iKappa,:,:));
+    halfWidth = squeeze(simResults.halfWidth(iKappa,:,:));
+    % bin by r2
+    binWidth = 0.05;
+    bins = [0:binWidth:(1-binWidth/2) 1];
+    for iBin = 1:length(bins)
+      % get the median value across the bin
+      halfWidthBin(iBin) = median(halfWidth((r2(:)>=bins(iBin)) & (r2(:)<(bins(iBin)+binWidth))));
+    end
+  else
+    bins = simResults.noiseVals;
+    binWidth = 0;
+    for iNoiseBin = 1:length(bins)
+      % get the median value across the bin
+      halfWidthBin(iNoiseBin) = median(simResults.halfWidth(iKappa,iNoiseBin,:));
+    end
   end
-  
   % color to plot width
   c = getSmoothColor(iKappa,length(simResults.kappa),'cool');
   % plot summaries
@@ -451,9 +475,8 @@ for iKappa = 1:length(simResults.kappa)
     subplot(subplotInfo(1),subplotInfo(2),subplotInfo(3));
   end
   % plot
-  plot([r2bins(1:end-1)+r2binWidth/2 1],halfWidthBin,'o-','MarkerFaceColor',c,'MarkerEdgeColor','w','Color',c);hold on
+  plot([bins(1:end-1)+binWidth/2 1],halfWidthBin,'o-','MarkerFaceColor',c,'MarkerEdgeColor','w','Color',c);hold on
 end
-
 
 % get tuning for different r2 values
 targetr2 = [0.25 0.5 1];r2binwidth = 0.25;
@@ -485,7 +508,14 @@ if ~isempty(subplotInfo)
   subplot(subplotInfo(1),subplotInfo(2),subplotInfo(3));
 end
 hline(fit.params.halfWidthAtHalfHeight);
-xlabel('r2');  ylabel('Channel model width');
+if r2plot
+  xlabel('r2');
+else
+  xlabel('noise (std)');
+  semilogx
+end
+
+ylabel('Channel model width');
 a = axis;
 yaxis(0,40);
 drawPublishAxis;
@@ -499,25 +529,101 @@ for iSubplot = 1:length(targetr2)
   drawPublishAxis('figSize=2')
 end
 
+%%%%%%%%%%%%%%%%%%
+%    dispFig4    %
+%%%%%%%%%%%%%%%%%%
+function dispFig4(dataDir,figDir)
 
+n = 1000;
+nNoiseVals = 50;
+recompute = 0;
+justCompute = 0;
 
+simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8');
+%simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',inf);
 
+mlrSmartfig('testCinvor_fig4','reuse');clf;
 
+% get neural tuningwidth
+neuralTuningWidth = fitVonMises([],[],'kappa',simResults.kappa);
+
+for iNoise = 1:length(simResults.noiseVals)
+  r2 = [];
+  % get current color
+  c = getSmoothColor(iNoise,length(simResults.noiseVals),'parula');
+  for iKappa = 1:length(simResults.kappa)
+    % get mean r1 value
+    r2(iKappa) = median(simResults.r2(iKappa,iNoise,:));
+  end
+  plot(neuralTuningWidth,r2,'o-','MarkerFaceColor',c,'MarkerEdgeColor','w','Color',c);hold on
+  legendNames{iNoise} = sprintf('%0.4f',simResults.noiseVals(iNoise));
+  legendSymbols{iNoise} = {'o-' c};
+end
+xlabel('Neural tuning width');
+ylabel('r2');
+mylegend(legendNames,legendSymbols);
+drawPublishAxis;
+keyboard
 %%%%%%%%%%%%%%%%%
 %    dispFig3   %
 %%%%%%%%%%%%%%%%%
-function dispFig3(dataDir)
+function dispFig3(dataDir,figDir)
+
+n = 500;
+nNoiseVals = 50;
+recompute = 0;
+justCompute = 0;
+
+% compute models with different voxel weightings
+simResultsStickWeighting = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',inf);
+if justCompute,simResultsStickWeighting=[];end
+simResults60 = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',fitVonMises([],[],'halfWidthAtHalfHeight',60));
+if justCompute,simResults60=[];end
+simResults120 = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',fitVonMises([],[],'halfWidthAtHalfHeight',120));
+if justCompute,simResults120=[];end
 
 % simulate range of neural tuning widths
-simResults3 = simulateNeuralTuningWidths(dataDir,'n=500','nNoiseVals=50','recompute=0','channelExponent=3','nStimVals=8','numFilters=8');
-simResultsStick = simulateNeuralTuningWidths(dataDir,'n=500','nNoiseVals=50','recompute=0','channelExponent=7','nStimVals=8','numFilters=8','filterType=stickFilter');
-simResults7 = simulateNeuralTuningWidths(dataDir,'n=500','nNoiseVals=50','recompute=0','channelExponent=7','nStimVals=8','numFilters=8');
-
-%dispSimulateNeuralTuningWidths(simResults);
-keyboard
-
+simResults3 = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=3','nStimVals=8','numFilters=8');
+if justCompute,simResults3=[];end
+simResultsStick = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','filterType=stickFilter');
+if justCompute,simResultsStick=[];end
+simResults7 = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8');
+if justCompute,simResults7=[];end
+if justCompute,return,end
 
 f = mlrSmartfig('testCinvor3','reuse');clf(f);
-dispSimulateNeuralTuningWidths(simResults3,'f1',f,'subplotInfo',[1 3 1]);
-dispSimulateNeuralTuningWidths(simResults7,'f1',f,'subplotInfo',[1 3 2]);
-dispSimulateNeuralTuningWidths(simResultsStick,'f1',f,'subplotInfo',[1 3 3]);
+subplot(2,3,1);
+plot(simResults3.channel.channelPref-90,simResults3.channel.idealStimResponse(5,:),'ko-','MarkerFaceColor','k','MarkerEdgeColor','w');
+xlabel('Channel pref (deg)');
+ylabel('Channel response');
+drawPublishAxis;
+
+subplot(2,3,2);
+plot(simResults7.channel.channelPref-90,simResults7.channel.idealStimResponse(5,:),'ko-','MarkerFaceColor','k','MarkerEdgeColor','w');
+xlabel('Channel pref (deg)');
+ylabel('Channel response');
+drawPublishAxis;
+
+subplot(2,3,3);
+for iStick = 1:length(simResultsStick.channel.channelPref)
+  plot([simResultsStick.channel.channelPref(iStick)-90 simResultsStick.channel.channelPref(iStick)-90],[0 simResultsStick.channel.idealStimResponse(5,iStick)],'k-','MarkerFaceColor','k','MarkerEdgeColor','w','MarkerSize',7);hold on
+  plot(simResultsStick.channel.channelPref(iStick)-90,simResultsStick.channel.idealStimResponse(5,iStick),'ko','MarkerFaceColor','k','MarkerEdgeColor','w','MarkerSize',7);hold on
+end
+xlabel('Channel pref (deg)');
+ylabel('Channel response');
+drawPublishAxis;
+
+dispSimulateNeuralTuningWidths(simResults3,'f1',f,'subplotInfo',[2 3 4]);
+dispSimulateNeuralTuningWidths(simResults7,'f1',f,'subplotInfo',[2 3 5]);
+dispSimulateNeuralTuningWidths(simResultsStick,'f1',f,'subplotInfo',[2 3 6]);
+neuralTuningWidth = fitVonMises([],[],'kappa',simResults3.kappa);
+for iTuning = 1:length(neuralTuningWidth);
+  neuralTuningWidthStr{iTuning} = num2str(neuralTuningWidth(iTuning));
+end
+figure(f);subplot(2,3,6);
+legend(neuralTuningWidthStr);
+
+print('-dpdf',fullfile(figDir,'fig3.pdf'));
+
+
+keyboard
