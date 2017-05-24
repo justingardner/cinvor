@@ -29,8 +29,10 @@ if rem(neuronsPerVox, nTuning)~=0
   keyboard
 end
 if rem(e.totalRangeDeg, nTuning)~=0
-  disp('(setCinvorModel) It would make more sense to have n set of possible tuning functions such as it can be divided by 360');
-  keyboard
+  if kappa > 0
+    disp('(setCinvorModel) It would make more sense to have n set of possible tuning functions such as it can be divided by 360');
+    keyboard
+  end
 end
 
 % how many sets of the complete neuron tuning is in each voxel
@@ -86,31 +88,27 @@ elseif strcmp(weighting,'concentrated')
       neuronVoxelWeights(iVoxel,mod(m.voxelPreferredOrientation(iVoxel),180)+1) = 1;
     else
       % get von mises distribution centered around preferred orientation for voxel (Wrapping at 180 instead of 360)
-      neuronVoxelWeights(iVoxel,:) = circshift(vonMises,mod(m.voxelPreferredOrientation(iVoxel),180));
+      neuronVoxelWeights(iVoxel,:) = rand(neuronsPerVox,1).*circshift(vonMises,mod(m.voxelPreferredOrientation(iVoxel),180));
     end
-    % and normalize weights to 1 (not sure this is needed, since all voxels will have the same weights)
-    neuronVoxelWeights(iVoxel,:) = neuronVoxelWeights(iVoxel,:)./sum(neuronVoxelWeights(iVoxel,:));
+    % and normalize weights to 90 (arbitrary but confroms to the weighting in other simulations)
+    neuronVoxelWeights(iVoxel,:) = sum(nVoxels)*0.5*neuronVoxelWeights(iVoxel,:)./sum(neuronVoxelWeights(iVoxel,:));
   end
 else
   disp('(setCinvorModel) Other weighting scheme is not implemented yet');
 end
 
-% get a von mises function (which is used below for every possible tuning, by 
-% circular shifting
-vonMises = fitVonMises(angles,[],0,kappa,180);
+% set kappa in model variable
+m.kappa = kappa;
 
-% compute tuning of neurons
-for iNeuron = 1:nTuning
-  % if concentration parameter is inf then it means to use a stick function
-  if isinf(kappa)
-    m.neuralTuning(iNeuron,1:length(angles)) = 0;
-    m.neuralTuning(iNeuron,find(round(prefStim(iNeuron))==angles)) = 1;
-  else
-    % compute neural response as a vonmises function (wrapping at 180 instead of 360)
-    m.neuralTuning(iNeuron,:) = circshift(vonMises,iNeuron-1);
-    m.neuralTuning(iNeuron,:) = m.neuralTuning(iNeuron,:)./max(m.neuralTuning(iNeuron,:));
-  end
-end
+% compute receptive field scale factor - so that each receptive field
+% gives a response of 1 integrated over all orientations (this is 
+% important as otherwise you will get more signal as a function
+% of orientation width).
+% do this by first setting scaleFactor to 1 and then normalizing
+% so that the full tuning function comes out to 1
+m.scaleFactor = 1;
+m.neuralResponse = getNeuralResponse(0:180,90,m);
+m.scaleFactor = 1 / sum(m.neuralResponse);
 
 % cycle over stimuli and calculate response of neurons
 for iStimVal = 1:e.stimLevel
@@ -118,19 +116,7 @@ for iStimVal = 1:e.stimLevel
   neuralResponse = zeros(nVoxels,neuronsPerVox);
   % loop across neurons, computing their response to the stimulus
   for jNeuron=1:neuronsPerVox 
-    if isinf(kappa)
-      % if we have stick functions then respond if there is a match
-      % note that we round here to deal with stimulus values like 22.5 which
-      % would otherwise (given the degree spacing of tuning never elicit a response.
-      if round(e.stimVals(iStimVal)) == round(prefStim(jNeuron))
-	neuralResponse(:,jNeuron) = 1;
-      else
-	neuralResponse(:,jNeuron) = 0;
-      end
-    else
-      % preferred stimulus for each neuron
-      neuralResponse(:,jNeuron)= fitVonMises(e.stimVals(iStimVal),[],prefStim(jNeuron),kappa,180);
-    end
+    neuralResponse(:,jNeuron) = getNeuralResponse(e.stimVals(iStimVal),prefStim(jNeuron),m);
   end
   % weight each neurons' response in each voxel
   weightedResponse = neuralResponse .* neuronVoxelWeights; 
@@ -147,7 +133,6 @@ m.nVoxels=nVoxels;
 m.neuronsPerVox=neuronsPerVox;
 m.nTuning=nTuning;
 m.prefStim=prefStim;
-m.kappa=kappa;
 m.amplitude = amplitude;
 m.noiseSTD = noise;
 m.rangeScaleFac=rangeScalFac;
@@ -161,6 +146,7 @@ m.kConcentrated = kConcentrated;
 doTestPlot = 0;
 if doTestPlot
   testPlot(m,e,neuralResponse)
+  drawnow
 end
 
 
@@ -168,6 +154,11 @@ end
 %    testPlot    %
 %%%%%%%%%%%%%%%%%%
 function testPlot(m,e,neuralResponse)
+
+% compute neural tuning
+for iNeuron = 1:m.neuronsPerVox
+  m.neuralTuning(:,iNeuron) = getNeuralResponse(0:179,m.prefStim(iNeuron),m);
+end
 
 mlrSmartfig('setCinvorModel','reuse');clf;
 subplot(2,3,4);
@@ -177,10 +168,14 @@ subplot(2,3,1);
 randVox = ceil(rand*m.nVoxels);
 plot(m.neuronVoxelWeights(randVox,:));
 hold on
-vline(m.voxelPreferredOrientation(randVox)+1);
-vline(mod(m.voxelPreferredOrientation(randVox)+fitVonMises([],[],'kappa',m.kConcentrated),180)+1);;
-vline(mod(m.voxelPreferredOrientation(randVox)-fitVonMises([],[],'kappa',m.kConcentrated),180)+1);;
-title(sprintf('Vox: %i pref: %i halfWidth: %0.1f',randVox,m.voxelPreferredOrientation(randVox),fitVonMises([],[],'kappa',m.kConcentrated)));
+if isfield(m,'voxelPreferredOrientation')
+  vline(m.voxelPreferredOrientation(randVox)+1);
+  vline(mod(m.voxelPreferredOrientation(randVox)+fitVonMises([],[],'kappa',m.kConcentrated),180)+1);;
+  vline(mod(m.voxelPreferredOrientation(randVox)-fitVonMises([],[],'kappa',m.kConcentrated),180)+1);;e
+  title(sprintf('Vox: %i pref: %i halfWidth: %0.1f',randVox,m.voxelPreferredOrientation(randVox),fitVonMises([],[],'kappa',m.kConcentrated)));
+else
+  title(sprintf('Vox: %i halfWidth: %0.1f',randVox,fitVonMises([],[],'kappa',m.kConcentrated)));
+end
 hline(max(m.neuronVoxelWeights(randVox,:))/2);
 % plot neural tuning
 subplot(2,3,5);
@@ -204,3 +199,31 @@ vline(e.stimVals(end)+1);
 subplot(2,3,6);
 plot(m.voxelResponse{end}');
 title(sprintf('Voxel response'));
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    getNeuralResponse    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function response = getNeuralResponse(orientation,orientationPreference,m);
+
+% if kaapa is inf it means to use stick functions
+if isinf(m.kappa)
+  % if we have stick functions then respond if there is a match
+  % note that we round here to deal with stimulus values like 22.5 which
+  % would otherwise (given the degree spacing of tuning never elicit a response.
+  response = round(orientation) == round(orientationPreference);
+  % if kaapa is negative it means to use category model
+elseif m.kappa < 0
+  %categorical model, where -kappa means the number of categories
+  categoryBins = 0:180/abs(m.kappa):180;
+  % use histc to figure out which bin the orientations live in
+  orientationPreference = mod(orientationPreference,180);
+  for iOrientation = 1:length(orientation)
+    response(iOrientation) = isequal(histc(mod(orientation(iOrientation),180),categoryBins),histc(orientationPreference,categoryBins));
+  end
+else
+  % otherwise it's just a von mises distribution
+  response = fitVonMises(orientation,[],orientationPreference,m.kappa,180);
+end
+
+% normalize by scale factor so that the total output of neuron is 1
+response = response * m.scaleFactor;
