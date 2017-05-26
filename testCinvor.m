@@ -8,25 +8,31 @@
 function retval = testCinvor(varargin)
 
 % get arguments
-getArgs(varargin,{'dataDir=~/data/cinvor2','analName=decon1gIns','nFold=5','subjectList',{'s00520140704/', 's00720150319/', 's01720140718/', 's01920150212/', 's02120150325/', 's02920150330/'},'recompute=0','figDir=~/Desktop'});
+getArgs(varargin,{'dataDir=~/Google Drive/cinvor/precompute','analName=decon1gIns','nFold=5','subjectList',{'s00520140704/', 's00720150319/', 's01720140718/', 's01920150212/', 's02120150325/', 's02920150330/'},'recompute=0','figDir=~/Desktop'});
 
 % number of subjects
 nSubjects = length(subjectList);
 
-%n = 500;
-%nNoiseVals = 50;
-%recompute = 0;
-%simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8');
-%f = mlrSmartfig('testCinvor_r2plot');;
-%dispSimulateNeuralTuningWidths(simResults,'f1',f,'subplotInfo',[1 2 1]);
-%dispSimulateNeuralTuningWidths(simResults,'f1',f,'subplotInfo',[1 2 2],'r2plot',0);
+%n = 100; nNoiseVals = 40; recompute = 0;
+%simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','kappa=[-2 -4 -8]','filterType=stickFilter');
+%dispSimulateNeuralTuningWidths(simResults);;
 %keyboard
+% run simulations
+%computeSimulations(dataDir,'n=100','nNoiseVals=40','recompute=0');
+%simResults = computeSimulations(dataDir,'n=500','nNoiseVals=50','recompute=0');
+simResults = computeSimulations(dataDir,'n=1000','nNoiseVals=50','recompute=0');
+%dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
 
-dispFig4(dataDir,figDir);
-% make figure 3
-dispFig3(dataDir,figDir);
-return
-% runf data analysis
+dispR2ByTuningWidthFig(simResults{2},dataDir,figDir);
+
+dispSimulateNeuralTuningWidths(simResults{7});
+
+keyboard
+dispCategoryFigure({simResults{[5 4 6]}},dataDir,figDir);
+dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
+keyboard
+
+% run data analysis
 contrastNames = {'high','low'};
 for iContrast = 1:length(contrastNames)
   % get contrast name
@@ -78,8 +84,8 @@ mlrSmartfig('cinvor_fig6','reuse');
 clf;hold on
 
 subplot(1,2,1);
-dispChannelOutput(contraCombinedOutput(1),contraCombinedChannel(1),'likelihood=1','MarkerFaceColor',colors.ipsiHigh);
-dispChannelOutput(ipsiCombinedOutput(1),ipsiCombinedChannel(1),'likelihood=1','MarkerFaceColor',colors.contraHigh);
+dispChannelOutput(contraCombinedOutput(1),contraCombinedChannel(1),'likelihood=1','MarkerFaceColor',colors.contraHigh);
+dispChannelOutput(ipsiCombinedOutput(1),ipsiCombinedChannel(1),'likelihood=1','MarkerFaceColor',colors.ipsiHigh);
 title(sprintf('V1 high contrast'));
 ylabel(sprintf('Decoded likelihood\np(orientation|BOLD)'));
 xlabel('Orientation difference from true (deg)');
@@ -329,7 +335,7 @@ function simResults = simulateNeuralTuningWidths(dataDir,varargin)
 
 % get default arguments
 filterType = [];channelExponent = [];nNoiseVals = [];n = [];filterType = [];recompute = [];
-getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8','numFilters=[]','weighting=random','kConcentrated=[]'});
+getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8','numFilters=[]','weighting=random','kConcentrated=[]','kappa=[]','nNeuronTypes=180'});
 
 % compute number of filters needed for exponent
 if isempty(numFilters)
@@ -345,15 +351,23 @@ simResults.kConcentrated = kConcentrated;
 
 % Setting kappa values to use
 % using fitVonMises to convert from half-width-at-half-height in degrees to kappa
-simResults.kappa = [inf fitVonMises([],[],'halfWidthAtHalfHeight',10:5:60)];
+if isempty(kappa)
+  % set range of kappas
+  simResults.kappa = [inf fitVonMises([],[],'halfWidthAtHalfHeight',5:5:45)];
+  simName = 'kappa';
+else
+  % use passed in kappas
+  simResults.kappa = kappa;
+  simName = sprintf('kappa_%s',fixBadChars(num2str(kappa)));
+end
 nKappa = length(simResults.kappa);
 
 % values of noise on voxels
-simResults.noiseVals = [0 logspace(log10(0.025),log10(15),nNoiseVals-1)];
+simResults.noiseVals = [0 logspace(log10(0.001),log10(1),nNoiseVals-1)];
 
 % make simulation name to save under
-dispStr = '';
-simName = sprintf('kappaSimulation_n%i_noise_%i_e%i_%s',n,nNoiseVals,channelExponent,filterType);
+dispStr = 'Random uniform weighting';
+simName = sprintf('%sSimulation_n%i_noise_%i_e%i_%s',simName,n,nNoiseVals,channelExponent,filterType);
 if ~isempty(kConcentrated) && strcmp(lower(weighting),'concentrated')
   simName = sprintf('%s_kConcentrate_%ideg',simName,round(fitVonMises([],[],'kappa',kConcentrated)));
   dispStr = sprintf('Concentrated weighting: %i',round(fitVonMises([],[],'kappa',kConcentrated)));
@@ -380,8 +394,16 @@ else
   for iNoise = 1:nNoiseVals
     % run simulation over tuning widths
     for iKappa = 1:nKappa
+      % if kappa is less than zero, then we are doing n category tuning - so
+      % set nTuning and neuronsPervox to the number of categories
+      if simResults.kappa(iKappa) < 0
+	nNeuronTypes = abs(simResults.kappa(iKappa));
+      else
+	% otherwise one neuron type for each orientation
+	nNeuronTypes = 180;
+      end
       % set the model parameters
-      m = setCinvorModel(simResults.e,'kappa',simResults.kappa(iKappa),'noise',simResults.noiseVals(iNoise),'weighting',weighting,'kConcentrated',kConcentrated);
+      m = setCinvorModel(simResults.e,'kappa',simResults.kappa(iKappa),'noise',simResults.noiseVals(iNoise),'weighting',weighting,'kConcentrated',kConcentrated,'nTuning',nNeuronTypes,'neuronsPerVox',nNeuronTypes);
       % n simulations
       parfor iSimulation = 1:n
 	warning off;
@@ -460,6 +482,7 @@ for iKappa = 1:length(simResults.kappa)
       % get the median value across the bin
       halfWidthBin(iBin) = median(halfWidth((r2(:)>=bins(iBin)) & (r2(:)<(bins(iBin)+binWidth))));
     end
+    plotBins = bins;
   else
     bins = simResults.noiseVals;
     binWidth = 0;
@@ -467,6 +490,7 @@ for iKappa = 1:length(simResults.kappa)
       % get the median value across the bin
       halfWidthBin(iNoiseBin) = median(simResults.halfWidth(iKappa,iNoiseBin,:));
     end
+    plotBins = [bins(1:end-1)+binWidth/2 1];
   end
   % color to plot width
   c = getSmoothColor(iKappa,length(simResults.kappa),'cool');
@@ -475,31 +499,16 @@ for iKappa = 1:length(simResults.kappa)
     subplot(subplotInfo(1),subplotInfo(2),subplotInfo(3));
   end
   % plot
-  plot([bins(1:end-1)+binWidth/2 1],halfWidthBin,'o-','MarkerFaceColor',c,'MarkerEdgeColor','w','Color',c);hold on
+  plot(plotBins,halfWidthBin,'o-','MarkerFaceColor',c,'MarkerEdgeColor','w','Color',c);hold on
 end
 
 % get tuning for different r2 values
 targetr2 = [0.25 0.5 1];r2binwidth = 0.25;
-figure(f2)
+figure(f2);
+% plot channel tuning graph for different r2
 for iR2 = 1:length(targetr2)
-  for iKappa = 1:length(simResults.kappa)
-    % get all simulations with the desired r2 in the bin
-    r2 = squeeze(simResults.r2(iKappa,:,:));
-    [noiseVals,simulationNums] = find((r2 > (targetr2(iR2)-r2binwidth)) & (r2 < (targetr2(iR2)+r2binwidth)));
-    %disp(sprintf('(testCinvor:dispSimulateNeuralTuningWidths) Found %i simulations for r2: %0.3f',length(noiseVals),targetr2(iR2)));
-    % no make a matrix of all of their channel responses
-    channelResponses = [];
-    for iSim = 1:length(noiseVals)
-      channelResponses(iSim,:) = squeeze(simResults.channelResponse(iKappa,noiseVals(iSim),simulationNums(iSim),:));
-    end
-
-    % color to plot width
-    c = getSmoothColor(iKappa,length(simResults.kappa),'cool');
-    % plot average
-    % and plot average
-    subplot(1,length(targetr2),iR2);
-    plot(simResults.channelXvals,mean(channelResponses),'o-','MarkerEdgeColor','w','Color',c);hold on
-  end
+  subplot(1,length(targetr2),iR2);
+  dispChannelTuning(simResults,targetr2(iR2),r2binwidth)
 end
 
 % label axis
@@ -520,27 +529,37 @@ a = axis;
 yaxis(0,40);
 drawPublishAxis;
 
-figure(f2)
-for iSubplot = 1:length(targetr2)
-  subplot(1,length(targetr2),iSubplot);
-  xlabel('Orientation difference from true (deg)');
-  ylabel('Channel response');
-  title(sprintf('r2=%0.2f',targetr2(iSubplot)));
-  drawPublishAxis('figSize=2')
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    dispChannelTuning    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function dispChannelTuning(simResults,targetr2,r2binwidth)
+
+for iKappa = 1:length(simResults.kappa)
+  % get all simulations with the desired r2 in the bin
+  r2 = squeeze(simResults.r2(iKappa,:,:));
+  [noiseVals,simulationNums] = find((r2 > (targetr2-r2binwidth)) & (r2 < (targetr2+r2binwidth)));
+  % no make a matrix of all of their channel responses
+  channelResponses = [];
+  for iSim = 1:length(noiseVals)
+    channelResponses(iSim,:) = squeeze(simResults.channelResponse(iKappa,noiseVals(iSim),simulationNums(iSim),:));
+  end
+
+  % color to plot width
+  c = getSmoothColor(iKappa,length(simResults.kappa),'cool');
+  % plot average
+  % and plot average
+  plot(simResults.channelXvals,mean(channelResponses),'o-','MarkerEdgeColor','w','Color',c);hold on
 end
 
-%%%%%%%%%%%%%%%%%%
-%    dispFig4    %
-%%%%%%%%%%%%%%%%%%
-function dispFig4(dataDir,figDir)
+xlabel('Orientation difference from true (deg)');
+ylabel('Channel response');
+title(sprintf('r2=%0.2f',targetr2));
+drawPublishAxis('figSize=2')
 
-n = 1000;
-nNoiseVals = 50;
-recompute = 0;
-justCompute = 0;
-
-simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8');
-%simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',inf);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    dispR2ByTuningWidthFig    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function dispR2ByTuningWidthFig(simResults,dataDir,figDir)
 
 mlrSmartfig('testCinvor_fig4','reuse');clf;
 
@@ -557,66 +576,89 @@ for iNoise = 1:length(simResults.noiseVals)
   end
   plot(neuralTuningWidth,r2,'o-','MarkerFaceColor',c,'MarkerEdgeColor','w','Color',c);hold on
   legendNames{iNoise} = sprintf('%0.4f',simResults.noiseVals(iNoise));
-  legendSymbols{iNoise} = {'o-' c};
+  legendSymbols{iNoise} = {'o-' c 'MarkerFaceColor' c 'MarkerEdgeColor' 'w'};
 end
-xlabel('Neural tuning width');
+xlabel('Neural tuning width (deg)');
 ylabel('r2');
-mylegend(legendNames,legendSymbols);
+title('r2 for different SNR as a function of neural tuning width');
+%mylegend(legendNames,legendSymbols);
+h = colorbar;
+set(h,'Limits',[min(simResults.noiseVals) max(simResults.noiseVals)]);
+colorbarTicks = [0.001 0.01 0.1 1];
+for iColorbarTicks = 1:length(colorbarTicks)
+  colorbarTickLinear(iColorbarTicks) = find(colorbarTicks(iColorbarTicks)==simResults.noiseVals)/length(simResults.noiseVals);
+  colorbarTickLabels{iColorbarTicks} = num2str(colorbarTicks(iColorbarTicks));
+end
+set(h,'Ticks',colorbarTickLinear)
+set(h,'TickLabels',colorbarTickLabels)
 drawPublishAxis;
 keyboard
-%%%%%%%%%%%%%%%%%
-%    dispFig3   %
-%%%%%%%%%%%%%%%%%
-function dispFig3(dataDir,figDir)
+print('-dpdf',fullfile(figDir,'fig4.pdf'));
 
-n = 500;
-nNoiseVals = 50;
-recompute = 0;
-justCompute = 0;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    computeSimulations    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function simResults = computeSimulations(dataDir,varargin)
 
-% compute models with different voxel weightings
-simResultsStickWeighting = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',inf);
-if justCompute,simResultsStickWeighting=[];end
-simResults60 = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',fitVonMises([],[],'halfWidthAtHalfHeight',60));
-if justCompute,simResults60=[];end
-simResults120 = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',fitVonMises([],[],'halfWidthAtHalfHeight',120));
-if justCompute,simResults120=[];end
-
+getArgs(varargin,{'n=500','nNoiseVals=50','recompute=0'});
+		  
 % simulate range of neural tuning widths
-simResults3 = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=3','nStimVals=8','numFilters=8');
-if justCompute,simResults3=[];end
-simResultsStick = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','filterType=stickFilter');
-if justCompute,simResultsStick=[];end
-simResults7 = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8');
-if justCompute,simResults7=[];end
-if justCompute,return,end
+simResults{1} = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=3','nStimVals=8','numFilters=8');
+simResults{1}.modelName = 'Channel exponent = 3';
+simResults{2} = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8');
+simResults{2}.modelName = 'Channel exponent = 7';
+simResults{3} = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','filterType=stickFilter');
+simResults{3}.modelName = 'Stick filter';
+
+% category model
+simResults{4} = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','kappa=[-2 -4 -8]');
+simResults{4}.modelName = 'category, channel exponent = 7';
+simResults{5} = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=3','nStimVals=8','numFilters=8','kappa=[-2 -4 -8]');
+simResults{5}.modelName = 'category, stick filter';
+simResults{6} = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','kappa=[-2 -4 -8]','filterType=stickFilter');
+simResults{6}.modelName = 'category';
+
+% Compute models with weighting
+simResults{7}= simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',fitVonMises([],[],'halfWidthAtHalfHeight',30));
+simResults{7}.modelName = 'Concentrated tuning 30';
+simResults{8} = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',fitVonMises([],[],'halfWidthAtHalfHeight',60));
+simResults{8}.modelName = 'Concentrated tuning 60';
+simResults{9} = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','weighting=concentrated','kConcentrated',inf);
+simResults{9}.modelName = 'Concentrated tuning stick';
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    dispChannelWidthByR2Fig   %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function dispChannelWidthByR2Fig(simResults,dataDir,figDir)
 
 f = mlrSmartfig('testCinvor3','reuse');clf(f);
 subplot(2,3,1);
-plot(simResults3.channel.channelPref-90,simResults3.channel.idealStimResponse(5,:),'ko-','MarkerFaceColor','k','MarkerEdgeColor','w');
+plot(simResults{1}.channel.channelPref-90,simResults{1}.channel.idealStimResponse(5,:),'ko-','MarkerFaceColor','k','MarkerEdgeColor','w');
 xlabel('Channel pref (deg)');
 ylabel('Channel response');
 drawPublishAxis;
 
 subplot(2,3,2);
-plot(simResults7.channel.channelPref-90,simResults7.channel.idealStimResponse(5,:),'ko-','MarkerFaceColor','k','MarkerEdgeColor','w');
+plot(simResults{2}.channel.channelPref-90,simResults{2}.channel.idealStimResponse(5,:),'ko-','MarkerFaceColor','k','MarkerEdgeColor','w');
 xlabel('Channel pref (deg)');
 ylabel('Channel response');
 drawPublishAxis;
 
 subplot(2,3,3);
-for iStick = 1:length(simResultsStick.channel.channelPref)
-  plot([simResultsStick.channel.channelPref(iStick)-90 simResultsStick.channel.channelPref(iStick)-90],[0 simResultsStick.channel.idealStimResponse(5,iStick)],'k-','MarkerFaceColor','k','MarkerEdgeColor','w','MarkerSize',7);hold on
-  plot(simResultsStick.channel.channelPref(iStick)-90,simResultsStick.channel.idealStimResponse(5,iStick),'ko','MarkerFaceColor','k','MarkerEdgeColor','w','MarkerSize',7);hold on
+for iStick = 1:length(simResults{3}.channel.channelPref)
+  plot([simResults{3}.channel.channelPref(iStick)-90 simResults{3}.channel.channelPref(iStick)-90],[0 simResults{3}.channel.idealStimResponse(5,iStick)],'k-','MarkerFaceColor','k','MarkerEdgeColor','w','MarkerSize',7);hold on
+  plot(simResults{3}.channel.channelPref(iStick)-90,simResults{3}.channel.idealStimResponse(5,iStick),'ko','MarkerFaceColor','k','MarkerEdgeColor','w','MarkerSize',7);hold on
 end
 xlabel('Channel pref (deg)');
 ylabel('Channel response');
 drawPublishAxis;
 
-dispSimulateNeuralTuningWidths(simResults3,'f1',f,'subplotInfo',[2 3 4]);
-dispSimulateNeuralTuningWidths(simResults7,'f1',f,'subplotInfo',[2 3 5]);
-dispSimulateNeuralTuningWidths(simResultsStick,'f1',f,'subplotInfo',[2 3 6]);
-neuralTuningWidth = fitVonMises([],[],'kappa',simResults3.kappa);
+dispSimulateNeuralTuningWidths(simResults{1},'f1',f,'subplotInfo',[2 3 4]);
+dispSimulateNeuralTuningWidths(simResults{2},'f1',f,'subplotInfo',[2 3 5]);
+dispSimulateNeuralTuningWidths(simResults{3},'f1',f,'subplotInfo',[2 3 6]);
+neuralTuningWidth = fitVonMises([],[],'kappa',simResults{1}.kappa);
 for iTuning = 1:length(neuralTuningWidth);
   neuralTuningWidthStr{iTuning} = num2str(neuralTuningWidth(iTuning));
 end
@@ -625,5 +667,38 @@ legend(neuralTuningWidthStr);
 
 print('-dpdf',fullfile(figDir,'fig3.pdf'));
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    dispCategoryFigure    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function dispCategoryFigure(simResults,dataDir,figDir)
 
-keyboard
+f = mlrSmartfig('testCinvor_category','reuse');clf(f);hold on
+
+subplot(1,4,1);hold on
+nCategories = 2;
+plot(-90:90,(-90:90>(-180/(2*nCategories))) & (-90:90<(180/(2*nCategories))),'c-','Color',getSmoothColor(1,3,'cool'));
+nCategories = 4;
+plot(-90:90,(-90:90>(-180/(2*nCategories))) & (-90:90<(180/(2*nCategories))),'c-','Color',getSmoothColor(2,3,'cool'));
+nCategories = 8;
+plot(-90:90,(-90:90>(-180/(2*nCategories))) & (-90:90<(180/(2*nCategories))),'c-','Color',getSmoothColor(3,3,'cool'));
+
+xaxis(-90,90);
+yaxis(0,1);
+xlabel('orientation (deg)');
+ylabel('Neural response');
+drawPublishAxis('xTick',[-90 0 90]);
+
+r2 = 0.2;r2binwidth = 0.1;
+subplot(1,4,2);
+dispChannelTuning(simResults{1},r2,r2binwidth);
+title('exponent = 3');
+
+subplot(1,4,3);
+dispChannelTuning(simResults{2},r2,r2binwidth);
+title('exponent = 8');
+
+subplot(1,4,4);
+dispChannelTuning(simResults{3},r2,r2binwidth)
+title('Stick function');
+
+print('-dpdf',fullfile(figDir,'figCategory.pdf'));
