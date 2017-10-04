@@ -18,7 +18,7 @@
 function m = setCinvorModel(e,varargin)
 
 % get arguments %%%%%%kappa=2.5, noise = 8
-getArgs(varargin, {'kappa=4','amplitude=1','noise=10','nVoxels=78','neuronsPerVox=180','weighting=random','nTuning=180','myWeights=0','uniformFactor=0','tao=.1','exponent=2','alphaParam=1','kConcentrated=[]'});
+getArgs(varargin, {'kappa=4','amplitude=1','noise=10','nVoxels=78','neuronsPerVox=180','weighting=random','nTuning=180','myWeights=0','uniformFactor=0','tao=.1','exponent=2','alphaParam=1','kConcentrated=[]','categoryConfusion=0'});
 
 % range of orientations span 180
 rangeScalFac=360/e.totalRangeDeg;
@@ -100,6 +100,10 @@ end
 % set kappa in model variable
 m.kappa = kappa;
 
+% sets whether there is any confusion about what category
+% a stimulus is, first set to 0 so that we can compute scale factor below
+m.categoryConfusion = 0;
+
 % compute receptive field scale factor - so that each receptive field
 % gives a response of 1 integrated over all orientations (this is 
 % important as otherwise you will get more signal as a function
@@ -126,6 +130,35 @@ for iStimVal = 1:e.stimLevel
   m.voxelResponse{iStimVal}=repmat(voxelResponse*amplitude, e.trialPerStim, 1);
 end
 
+% if there is category confusion, then some of the instances will
+% have a response due to the neighboring stimulus
+if categoryConfusion > 0
+  % note this code only works with kappa = -8
+  if kappa ~= -8
+    disp(sprintf('(setCinvorModel) Category confusion only confuses categories for 8 category bins'));
+    keyboard
+  end
+  % keep originalVoxelResponse for swapping trials out from
+  originalVoxelResponse = m.voxelResponse;
+  % cycle over stimulus values
+  for iStimVal = 1:e.stimLevel
+    % randomly select trials to confuse with this one
+    confusedTrials = find(rand(1,e.trialPerStim) <= categoryConfusion);
+    % randomly select which stimulus to confuse with as
+    % one of the neighboring stimulus values
+    confusedTrialVal = iStimVal + 2*(rand(1,length(confusedTrials)) > 0.5) - 1;
+    confusedTrialVal(confusedTrialVal <= 0) = e.stimLevel+confusedTrialVal(confusedTrialVal <= 0);
+    confusedTrialVal(confusedTrialVal > e.stimLevel) = confusedTrialVal(confusedTrialVal > e.stimLevel)-e.stimLevel+1;
+    % now do the swap for each confused trial
+    for iConfusedTrial = 1:length(confusedTrials)
+      m.voxelResponse{iStimVal}(confusedTrials(iConfusedTrial),:) = originalVoxelResponse{confusedTrialVal(iConfusedTrial)}(1,:);
+    end
+    % keep in structure
+    m.confusedTrials{iStimVal} = confusedTrials;
+    m.confusedTrialVal{iStimVal} = confusedTrialVal;
+  end
+end
+
 %put these parameters in the m structure
 m.neuronVoxelWeights = neuronVoxelWeights;
 m.weighting=weighting;
@@ -141,6 +174,7 @@ m.tao = tao;
 m.exponent = exponent;
 m.alphaParam = alphaParam;
 m.kConcentrated = kConcentrated;
+m.categoryConfusion = categoryConfusion;
 
 % testing plots
 doTestPlot = 0;
@@ -148,7 +182,6 @@ if doTestPlot
   testPlot(m,e,neuralResponse)
   drawnow
 end
-
 
 %%%%%%%%%%%%%%%%%%
 %    testPlot    %

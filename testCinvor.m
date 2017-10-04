@@ -13,24 +13,28 @@ getArgs(varargin,{'dataDir=~/Google Drive/cinvor/precompute','analName=decon1gIn
 % number of subjects
 nSubjects = length(subjectList);
 
-%n = 100; nNoiseVals = 40; recompute = 0;
-%simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','kappa=[-2 -4 -8]','filterType=stickFilter');
-%dispSimulateNeuralTuningWidths(simResults);;
+n = 100; nNoiseVals = 40; recompute = 0;
+recompute = 0;n = 50;nNoiseVals=10;
+simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','kappa=[-8]','filterType=stickFilter','minNoise=0.001','maxNoise=1','categoryConfusion=0.15');
+dispSimulateNeuralTuningWidths(simResults);
+keyboard
+%dispSimulateNeuralTuningWidths(simResults,'r2plot=0');;
+dispChannelTuning(simResults,0.1,0.1)
+keyboard
+
 %keyboard
 % run simulations
 %computeSimulations(dataDir,'n=100','nNoiseVals=40','recompute=0');
 %simResults = computeSimulations(dataDir,'n=500','nNoiseVals=50','recompute=0');
 simResults = computeSimulations(dataDir,'n=1000','nNoiseVals=50','recompute=0');
-%dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
 
-dispR2ByTuningWidthFig(simResults{2},dataDir,figDir);
+dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
+%dispR2ByTuningWidthFig(simResults{2},dataDir,figDir);
 
 dispSimulateNeuralTuningWidths(simResults{7});
 
-keyboard
 dispCategoryFigure({simResults{[5 4 6]}},dataDir,figDir);
 dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
-keyboard
 
 % run data analysis
 contrastNames = {'high','low'};
@@ -47,6 +51,11 @@ for iContrast = 1:length(contrastNames)
   % display data
   [contraCombinedOutput(iContrast) contraCombinedChannel(iContrast) ipsiCombinedOutput(iContrast) ipsiCombinedChannel(iContrast)] = dispCinvorData(leftChannels,rightChannels,leftOutputs,rightOutputs,contrastName,roiName,nROI,nSubjects);
 
+  % get r2 for subject-by-subject
+  for iSubject = 1:size(leftOutputs,1)
+    r2(iContrast,iSubject*2-1) = leftOutputs(iSubject,2).r2.overall;
+    r2(iContrast,iSubject*2) = rightOutputs(iSubject,1).r2.overall;
+  end
 end
 
 % now fit high-contrast and low-contrast data
@@ -54,8 +63,8 @@ end
 [~,lowContrastResponse,lowContrastSTE,xVals] = dispChannelOutput(contraCombinedOutput(2),contraCombinedChannel(2),'suppressPlot=1');
 
 % fit high / low contrast
-highFit = fitVonMises(xVals,highContrastResponse,'dispFit=0');
-lowFit = fitVonMises(xVals,lowContrastResponse,'dispFit=0');
+highFit = fitVonMises(xVals,highContrastResponse,'dispFit=0','parametricBootstrap=1000','yste',highContrastSTE);
+lowFit = fitVonMises(xVals,lowContrastResponse,'dispFit=0','parametricBootstrap=1000','yste',lowContrastSTE);
 
 % colors
 colors.contraHigh = [1 0 0];
@@ -74,6 +83,45 @@ disp(sprintf('Contra high contrast r2: %0.2f +- %0.2f',contraCombinedOutput(1).r
 disp(sprintf('Ipsi high contrast r2: %0.2f +- %0.2f',ipsiCombinedOutput(1).r2.overall,ipsiCombinedOutput(1).r2.steOverall));
 disp(sprintf('Contra low contrast r2: %0.2f +- %0.2f',contraCombinedOutput(2).r2.overall,contraCombinedOutput(2).r2.steOverall));
 disp(sprintf('Ipsi low contrast r2: %0.2f +- %0.2f',ipsiCombinedOutput(2).r2.overall,ipsiCombinedOutput(2).r2.steOverall));
+
+disp(sprintf('high contrast half-width: %0.1f',highFit.params.halfWidthAtHalfHeight));
+disp(sprintf('low contrast half-width: %0.1f',lowFit.params.halfWidthAtHalfHeight));
+% calculate percentage of bootstraps that have high narrower than low
+p = sum((highFit.yBootHalfWidth - lowFit.yBootHalfWidth)<0)/length(lowFit.yBootHalfWidth);
+disp(sprintf('Percent bootstraps with high narrower than low: %0.1f',p*100));
+
+
+disp(sprintf('high contrast amplitude: %0.2f',highFit.params.amp));
+disp(sprintf('low contrast amplitude: %0.2f',lowFit.params.amp));
+p = sum((highFit.yBoot(:,1) - lowFit.yBoot(:,1))>0)/length(lowFit.yBootHalfWidth);
+disp(sprintf('Percent bootstraps with high higher than low: %0.1f',p*100));
+
+% compute hemisphere stats
+lowContrastWider = 0;lowContrastLower = 0;
+nHemi = length(subjectBySubjectFit(1).fit);
+for iHemi = 1:nHemi
+  % half width
+  halfWidth(1,iHemi) = subjectBySubjectFit(1).fit(iHemi).params.halfWidthAtHalfHeight;
+  halfWidth(2,iHemi) = subjectBySubjectFit(2).fit(iHemi).params.halfWidthAtHalfHeight;
+  % amplitude
+  amp(1,iHemi) = subjectBySubjectFit(1).fit(iHemi).params.amp;
+  amp(2,iHemi) = subjectBySubjectFit(2).fit(iHemi).params.amp;
+end
+disp(sprintf('%i/%i hemispheres have wider fit for low contrast',sum(halfWidth(1,:) < halfWidth(2,:)),size(halfWidth,2)));
+[p t dof] = pairedttest(halfWidth(1,:),halfWidth(2,:));
+disp(sprintf('p = %0.3f, t(%i) = %0.3f paired t-test',p,dof,t));
+
+disp(sprintf('%i/%i hemispheres have wider fit for low contrast',sum(amp(1,:) > amp(2,:)),size(amp,2)));
+[p t dof] = pairedttest(amp(1,:),amp(2,:));
+disp(sprintf('p = %0.3f, t(%i) = %0.3f paired t-test',p,dof,t))
+
+disp(sprintf('%i/%i hemispheres have higher r2 for high contrast',sum(r2(1,:) > r2(2,:)),size(r2,2)));
+[p t dof] = pairedttest(r2(1,:),r2(2,:));
+disp(sprintf('p = %0.3f, t(%i) = %0.3f paired t-test',p,dof,t))
+
+% number taken from Dylan's analysis - simuCinvorChangeWidth.m
+disp(sprintf('Magnitude decrease from high contrast is %0.3f%%',100*0.73/1.73));
+
 
 %%%%%%%%%%%%%%%%%%
 %    dispFig6    %
@@ -318,7 +366,7 @@ end
 
 disppercent(-inf,'(testCinvor:cinvorSubjectBySubject) Computing von mises fits for each hemisphere');
 for iHemisphere = 1:size(contraResponse,1)
-  retval.fit(iHemisphere) = fitVonMises(xVals,contraResponse(iHemisphere,:),'dispfit=0');
+  retval.fit(iHemisphere) = fitVonMises(xVals,contraResponse(iHemisphere,:),'dispFit=0');
   retval.kappa(iHemisphere) = retval.fit(iHemisphere).params.kappa;
   retval.mu(iHemisphere) = retval.fit(iHemisphere).params.mu;
   retval.offset(iHemisphere) = retval.fit(iHemisphere).params.offset;
@@ -335,7 +383,7 @@ function simResults = simulateNeuralTuningWidths(dataDir,varargin)
 
 % get default arguments
 filterType = [];channelExponent = [];nNoiseVals = [];n = [];filterType = [];recompute = [];
-getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8','numFilters=[]','weighting=random','kConcentrated=[]','kappa=[]','nNeuronTypes=180'});
+getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8','numFilters=[]','weighting=random','kConcentrated=[]','kappa=[]','nNeuronTypes=180','minNoise=0.001','maxNoise=1','categoryConfusion=0'});
 
 % compute number of filters needed for exponent
 if isempty(numFilters)
@@ -363,7 +411,7 @@ end
 nKappa = length(simResults.kappa);
 
 % values of noise on voxels
-simResults.noiseVals = [0 logspace(log10(0.001),log10(1),nNoiseVals-1)];
+simResults.noiseVals = [0 logspace(log10(minNoise),log10(maxNoise),nNoiseVals-1)];
 
 % make simulation name to save under
 dispStr = 'Random uniform weighting';
@@ -371,6 +419,9 @@ simName = sprintf('%sSimulation_n%i_noise_%i_e%i_%s',simName,n,nNoiseVals,channe
 if ~isempty(kConcentrated) && strcmp(lower(weighting),'concentrated')
   simName = sprintf('%s_kConcentrate_%ideg',simName,round(fitVonMises([],[],'kappa',kConcentrated)));
   dispStr = sprintf('Concentrated weighting: %i',round(fitVonMises([],[],'kappa',kConcentrated)));
+end
+if ~isequal(categoryConfusion,0)
+  simName = sprintf('%s_catcon_%i%',simName,round(100*categoryConfusion));
 end
 simName = fullfile(dataDir,simName);
 simName = setext(simName,'mat');
@@ -403,7 +454,7 @@ else
 	nNeuronTypes = 180;
       end
       % set the model parameters
-      m = setCinvorModel(simResults.e,'kappa',simResults.kappa(iKappa),'noise',simResults.noiseVals(iNoise),'weighting',weighting,'kConcentrated',kConcentrated,'nTuning',nNeuronTypes,'neuronsPerVox',nNeuronTypes);
+      m = setCinvorModel(simResults.e,'kappa',simResults.kappa(iKappa),'noise',simResults.noiseVals(iNoise),'weighting',weighting,'kConcentrated',kConcentrated,'nTuning',nNeuronTypes,'neuronsPerVox',nNeuronTypes,'categoryConfusion',categoryConfusion);
       % n simulations
       parfor iSimulation = 1:n
 	warning off;
@@ -476,7 +527,7 @@ for iKappa = 1:length(simResults.kappa)
     r2 = squeeze(simResults.r2(iKappa,:,:));
     halfWidth = squeeze(simResults.halfWidth(iKappa,:,:));
     % bin by r2
-    binWidth = 0.05;
+    binWidth = 0.1;
     bins = [0:binWidth:(1-binWidth/2) 1];
     for iBin = 1:length(bins)
       % get the median value across the bin
@@ -526,7 +577,7 @@ end
 
 ylabel('Channel model width');
 a = axis;
-yaxis(0,40);
+yaxis(0,50);
 drawPublishAxis;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -591,8 +642,8 @@ for iColorbarTicks = 1:length(colorbarTicks)
 end
 set(h,'Ticks',colorbarTickLinear)
 set(h,'TickLabels',colorbarTickLabels)
+yaxis(0,1);
 drawPublishAxis;
-keyboard
 print('-dpdf',fullfile(figDir,'fig4.pdf'));
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -702,3 +753,70 @@ dispChannelTuning(simResults{3},r2,r2binwidth)
 title('Stick function');
 
 print('-dpdf',fullfile(figDir,'figCategory.pdf'));
+
+% pairedttest
+%
+%      usage: pairedttest(dist1, dist2)
+%       e.g.: p = pairedttest(dist1, dist2)
+%         by: ustin gardner
+%       date: 2013/02/06
+%
+function [p t dof d] = pairedttest(dist1,dist2)
+
+% check arguments
+if (nargin ~= 2)
+  help myttest;
+  return;
+end
+
+% check length
+dist1 = dist1(:);dist2 = dist2(:);
+if (length(dist1) ~= length(dist2))
+  disp(sprintf('(pairedttest) Distributions must be the same size'));
+  p = nan;
+  return
+end
+
+% remove nan's from the data
+goodvals = find(~isnan(dist1(:)) & ~isnan(dist2(:)));
+dist1 = dist1(goodvals);
+dist2 = dist2(goodvals);
+
+if (length(dist1) <= 2)
+  disp(sprintf('(pairedttest) Distributions must both have 2 or more non-nan matching values'));
+  p = nan;
+  return
+end
+
+% number of values
+n = length(dist1);
+
+% calculate mean paired difference
+md = mean(dist1-dist2);
+
+% calculate variances
+var1=var(dist1);
+var2=var(dist2);
+
+% standard error of the mean
+Sd = std(dist1-dist2)/sqrt(n);
+
+% t statistic
+t = md/Sd;
+
+% p-value
+dof = n-1;
+p = betainc(dof/(dof+t^2),dof/2,.5);
+
+% return some stuff
+if nargout == 4
+  d.p = p;
+  d.n = n;
+  d.t = t;
+  d.m1 = mean(dist1);
+  d.m2 = mean(dist2);
+  d.std1 = sqrt(var1);
+  d.std2 = sqrt(var2);
+end
+
+
