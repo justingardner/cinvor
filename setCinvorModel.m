@@ -18,7 +18,7 @@
 function m = setCinvorModel(e,varargin)
 
 % get arguments %%%%%%kappa=2.5, noise = 8
-getArgs(varargin, {'kappa=4','amplitude=1','noise=10','nVoxels=78','neuronsPerVox=180','weighting=random','nTuning=180','myWeights=0','uniformFactor=0','tao=.1','exponent=2','alphaParam=1','kConcentrated=[]','categoryConfusion=0'});
+getArgs(varargin, {'kappa=4','amplitude=1','noise=10','nVoxels=78','neuronsPerVox=180','weighting=random','nTuning=180','myWeights=0','uniformFactor=0','tao=.1','exponent=2','alphaParam=1','kConcentrated=[]','categoryConfusion=0','voxelTuningFunction=0'});
 
 % range of orientations span 180
 rangeScalFac=360/e.totalRangeDeg;
@@ -128,6 +128,29 @@ for iStimVal = 1:e.stimLevel
   voxelResponse = sum(weightedResponse,2)'; 
   % put into instances
   m.voxelResponse{iStimVal}=repmat(voxelResponse*amplitude, e.trialPerStim, 1);
+end
+
+% compute voxel tuning function for all orientions
+if voxelTuningFunction
+  disppercent(-inf,'(setCinvorModel) Computing voxel tuning functions');
+  m.voxelTuningFunction = nan(180,nVoxels);
+  for iStimVal = 0:179
+    % initialize neural response matrix
+    neuralResponse = zeros(nVoxels,neuronsPerVox);
+    % loop across neurons, computing their response to the stimulus
+    for jNeuron=1:neuronsPerVox 
+      neuralResponse(:,jNeuron) = getNeuralResponse(iStimVal,prefStim(jNeuron),m);
+    end
+    % weight each neurons' response in each voxel
+    weightedResponse = neuralResponse .* neuronVoxelWeights; 
+    %sum all neurons within a voxel
+    voxelResponse = sum(weightedResponse,2)'; 
+    % put into instances
+    m.voxelTuningFunction(iStimVal+1,:) = (voxelResponse*amplitude)';
+    % disppercent
+    disppercent(iStimVal/180);
+  end
+  disppercent(inf);
 end
 
 % if there is category confusion, then some of the instances will
