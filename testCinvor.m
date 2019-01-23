@@ -13,28 +13,31 @@ getArgs(varargin,{'dataDir=~/Google Drive/cinvor/precompute','analName=decon1gIn
 % number of subjects
 nSubjects = length(subjectList);
 
+% test how channel basis functions can fit tunings
+testBasisFunctions;
+keyboard
 n = 100; nNoiseVals = 40; recompute = 0;
 recompute = 0;n = 50;nNoiseVals=10;
 simResults = simulateNeuralTuningWidths(dataDir,'n',n,'nNoiseVals',nNoiseVals,'recompute',recompute,'channelExponent=7','nStimVals=8','numFilters=8','kappa=[-8]','filterType=stickFilter','minNoise=0.001','maxNoise=1','categoryConfusion=0.15');
-dispSimulateNeuralTuningWidths(simResults);
-keyboard
+%dispSimulateNeuralTuningWidths(simResults);
+%keyboard
 %dispSimulateNeuralTuningWidths(simResults,'r2plot=0');;
-dispChannelTuning(simResults,0.1,0.1)
-keyboard
+%dispChannelTuning(simResults,0.1,0.1)
+%keyboard
 
 %keyboard
 % run simulations
 %computeSimulations(dataDir,'n=100','nNoiseVals=40','recompute=0');
 %simResults = computeSimulations(dataDir,'n=500','nNoiseVals=50','recompute=0');
-simResults = computeSimulations(dataDir,'n=1000','nNoiseVals=50','recompute=0');
+%simResults = computeSimulations(dataDir,'n=1000','nNoiseVals=50','recompute=0');
 
-dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
+%dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
 %dispR2ByTuningWidthFig(simResults{2},dataDir,figDir);
 
-dispSimulateNeuralTuningWidths(simResults{7});
+%dispSimulateNeuralTuningWidths(simResults{7});
 
-dispCategoryFigure({simResults{[5 4 6]}},dataDir,figDir);
-dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
+%dispCategoryFigure({simResults{[5 4 6]}},dataDir,figDir);
+%dispChannelWidthByR2Fig({simResults{1:3}},dataDir,figDir);
 
 % run data analysis
 contrastNames = {'high','low'};
@@ -818,5 +821,74 @@ if nargout == 4
   d.std1 = sqrt(var1);
   d.std2 = sqrt(var2);
 end
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%    testBasisFunctions    %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+function testBasisFunctions(varargin)
+
+% copied from simulateNeuralTuningWidth - so not all parameters may be relevant
+getArgs(varargin,{'n=1000','nNoiseVals=50','channelExponent=7','filterType=sinFilter','recompute=0','nStimVals=8','numFilters=[]','weighting=random','kConcentrated=[]','kappa=[]','nNeuronTypes=180','minNoise=0.001','maxNoise=1','categoryConfusion=0'});
+
+kappa = fitVonMises([],[],'halfWidthAtHalfHeight',15);
+noise = 0.001;
+
+e = specifyCinvorExperiment('stimLevel',nStimVals,'trialPerStim=21');
+m = setCinvorModel(e,'kappa',kappa,'noise',noise,'weighting',weighting,'kConcentrated',kConcentrated,'nTuning',nNeuronTypes,'neuronsPerVox',nNeuronTypes,'categoryConfusion',categoryConfusion,'voxelTuningFunction=1');
+
+
+% get train and test instances
+trainInstances = getCinvorInstances(m,e);
+testInstances = getCinvorInstances(m,e);
+% compute forward model
+
+channels = buildChannels(trainInstances,e.stimVals,'dispChannels=0','fitNoise',0,'model',filterType,'exponent',channelExponent,'numFilters',numFilters);
+
+channelXform = rand(8,8);
+channels(2) = buildChannels(trainInstances,e.stimVals,'dispChannels=0','fitNoise',0,'model',filterType,'exponent',channelExponent,'numFilters',numFilters,'channelXform',channelXform);
+%channels(3) = buildChannels(trainInstances,e.stimVals,'dispChannels=0','fitNoise',0,'model','stickFilter','exponent',channelExponent,'numFilters',numFilters,'channelXform',[]);
+
+plotVoxelFit(e,m,channels,2);
+legend('Voxel response','Unimodal channel model fit','Random model fit');
+keyboard
+
+%%%%%%%%%%%%%%%%%%%%%%
+%    plotVoxelFit    %
+%%%%%%%%%%%%%%%%%%%%%%
+% plot the voxel fit
+function plotVoxelFit(e,m,channels,voxNum)
+
+mlrSmartfig('testCinvor_voxelfit','reuse');clf;
+
+% plot the original
+voxelResponse = m.voxelTuningFunction(:,voxNum);
+plot(channels(1).spanValues,voxelResponse,'k-');hold on
+
+for iChannel = 1:length(channels)
+  % calculate the fit functions
+  m.fitVoxelResponses = channels(iChannel).spanResponse*channels(iChannel).channelWeights;
+
+  % get the responses that should match
+  fitVoxelResponse = m.fitVoxelResponses(:,voxNum);
+
+  % find scale and offset to match
+  voxelResponsesAtTest = voxelResponse(round(e.stimVals)+1);
+  fitVoxelResponsesAtTest = fitVoxelResponse(round(e.stimVals)+1);
+
+  % calculate scale and offset to match
+  A = fitVoxelResponsesAtTest;
+  A(:,2) = 1;
+  scaleOffset = pinv(A) * voxelResponsesAtTest;
+
+  colorValue = getSmoothColor(iChannel,length(channels),'hsv');
+  
+  plot(channels(iChannel).spanValues,fitVoxelResponse*scaleOffset(1)+scaleOffset(2),'-','Color',colorValue);
+  xlabel('Orientation (deg)');
+  ylabel('response');
+end
+
+vline(e.stimVals);
+
 
 

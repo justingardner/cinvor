@@ -33,7 +33,7 @@ end
 
 instanceFieldName=[]; channelFieldName=[]; model=[]; numFilters=[]; exponent=[]; algorithm=[]; dispChannels=[]; verbose=[];
 % parse input arguments
-[~,~,preprocessArgs] = getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','model=sinFilter','numFilters=8','exponent=7','algorithm=pinv','dispChannels=0','verbose=0','fitNoiseModel=0','noiseModelGridSearchOnly=0','noiseModelFitTolerence=1','noiseModelGridSteps=10','fitNoise=0'});
+[~,~,preprocessArgs] = getArgs(varargin,{'instanceFieldName=instance','channelFieldName=channel','model=sinFilter','numFilters=8','exponent=7','algorithm=pinv','dispChannels=0','verbose=0','fitNoiseModel=0','noiseModelGridSearchOnly=0','noiseModelFitTolerence=1','noiseModelGridSteps=10','fitNoise=0','channelXform=[]'});
 
 % see if we are passed in a cell array of rois. If so, then call buildClassifier
 % sequentially on each roi and put the output into the field specified by classField
@@ -80,13 +80,13 @@ oneTimeWarning('buildChannelsFeatureSpace',['(buildChannels) Assume feature spac
 
 % get channel responses
 channel.spanValues=0:1:channel.span-1;
-[channel.spanResponse channel.channelPref]=getChannelResponse(channel.spanValues,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
+[channel.spanResponse channel.channelPref]=getChannelResponse(channel.spanValues,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent,'channelXform',channelXform);
 if ~isequal(channel.channelPref, stimVals)
   warning('(buildChannels) Channels being built have different preferences than the stimulus. The current implementation is likely incorrect under such a setting');
 end
 channel.idealStimVals=stimVals;
-[channel.idealStimResponse temp]=getChannelResponse(stimVals,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
-[channel.channelResponse temp]=getChannelResponse(stimValVector,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent);
+[channel.idealStimResponse temp]=getChannelResponse(stimVals,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent,'channelXform',channelXform);
+[channel.channelResponse temp]=getChannelResponse(stimValVector,multiplier,'model',model,'numFilters',numFilters,'exponent',exponent,'channelXform',channelXform);
 
 % get channel weights
 channel.channelWeights=getChannelWeights(channel.channelResponse, instanceMatrix,'algorithm',algorithm);
@@ -251,10 +251,14 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [channelResponse channelOrientPref] = getChannelResponse(orientationVec,multiplier,varargin)
 
-getArgs(varargin,{'model=sinFilter','numFilters=8','exponent=2','filterPhaseOffset=0'});
+getArgs(varargin,{'model=sinFilter','numFilters=8','exponent=2','filterPhaseOffset=0','channelXform=[]'});
 
 if strcmp(model,'sinFilter')
   [channelResponse channelOrientPref] = sinFilter(orientationVec,multiplier,numFilters,exponent,filterPhaseOffset);
+  % convert channel response using channelXform
+  if ~isempty(channelXform)
+    channelResponse = channelResponse*channelXform;
+  end
 elseif strcmp(model,'stickFilter')
   [channelResponse channelOrientPref] = stickFilter(orientationVec,multiplier,numFilters,exponent,filterPhaseOffset);
 else
